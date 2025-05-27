@@ -1,0 +1,1190 @@
+name: Validation Engine
+
+on:
+  pull_request:
+    paths:
+      - 'live/**/folder/**'
+      - 'live/**/project/**'
+      - 'live/**/*-vpc-network/**'
+      - 'live/**/vpc-network/**'
+      - 'live/**/external-ips/**'
+      - 'live/**/compute/**'
+      - 'live/**/*-psa/**'
+      - 'live/**/firewall-rules/**'
+      - 'live/**/firewall.hcl'
+      - 'live/**/secrets/**'
+      - 'live/**/buckets/**'
+      - 'live/**/bigquery/**'
+      - 'live/**/cloud-sql/**'
+      - 'live/**/gke/**'
+      - 'live/**/iam-bindings/**'
+      - 'live/**/compute/*/iam-bindings/**'
+      - 'live/**/gke/*/iam-bindings/**'
+      - '_common/templates/folder.hcl'
+      - '_common/templates/folder/**'
+      - '_common/templates/project.hcl'
+      - '_common/templates/project/**'
+      - '_common/templates/network.hcl'
+      - '_common/templates/network/**'
+      - '_common/templates/external_ip.hcl'
+      - '_common/templates/external_ip/**'
+      - '_common/templates/firewall_rules.hcl'
+      - '_common/templates/firewall_rules/**'
+      - '_common/templates/compute_instance.hcl'
+      - '_common/templates/compute_instance/**'
+      - '_common/templates/instance_template.hcl'
+      - '_common/templates/instance_template/**'
+      - '_common/templates/private_service_access.hcl'
+      - '_common/templates/private_service_access/**'
+      - '_common/templates/secret_manager.hcl'
+      - '_common/templates/secret_manager/**'
+      - '_common/templates/cloud_storage.hcl'
+      - '_common/templates/cloud_storage/**'
+      - '_common/templates/bigquery.hcl'
+      - '_common/templates/bigquery/**'
+      - '_common/templates/cloud_sql.hcl'
+      - '_common/templates/cloud_sql/**'
+      - '_common/templates/gke.hcl'
+      - '_common/templates/gke/**'
+      - '_common/templates/iam_bindings.hcl'
+      - '_common/templates/iam_bindings/**'
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: pr-engine-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect-resource-changes:
+    name: 🔍 Discovering Changes
+    runs-on: ubuntu-latest
+    outputs:
+      has-folder-changes: ${{ steps.detect.outputs.has-folder-changes }}
+      has-project-changes: ${{ steps.detect.outputs.has-project-changes }}
+      has-vpc-network-changes: ${{ steps.detect.outputs.has-vpc-network-changes }}
+      has-external-ip-changes: ${{ steps.detect.outputs.has-external-ip-changes }}
+      has-firewall-rules-changes: ${{ steps.detect.outputs.has-firewall-rules-changes }}
+      has-buckets-changes: ${{ steps.detect.outputs.has-buckets-changes }}
+      has-instance-template-changes: ${{ steps.detect.outputs.has-instance-template-changes }}
+      has-compute-changes: ${{ steps.detect.outputs.has-compute-changes }}
+      has-private-service-access-changes: ${{ steps.detect.outputs.has-private-service-access-changes }}
+      has-secrets-changes: ${{ steps.detect.outputs.has-secrets-changes }}
+      has-bigquery-changes: ${{ steps.detect.outputs.has-bigquery-changes }}
+      has-cloud-sql-changes: ${{ steps.detect.outputs.has-cloud-sql-changes }}
+      has-gke-changes: ${{ steps.detect.outputs.has-gke-changes }}
+      has-iam-bindings-changes: ${{ steps.detect.outputs.has-iam-bindings-changes }}
+      has-project-iam-bindings-changes: ${{ steps.detect.outputs.has-project-iam-bindings-changes }}
+      has-instance-iam-bindings-changes: ${{ steps.detect.outputs.has-instance-iam-bindings-changes }}
+      has-gke-iam-bindings-changes: ${{ steps.detect.outputs.has-gke-iam-bindings-changes }}
+      execution-order: ${{ steps.detect.outputs.execution-order }}
+      new-compute-instances: ${{ steps.detect.outputs.new-compute-instances }}
+      has-new-compute-instances: ${{ steps.detect.outputs.has-new-compute-instances }}
+      deleted-resources: ${{ steps.detect.outputs.deleted-resources }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes for each resource type
+        id: detect
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Get file status for new VM pair detection
+          CHANGED_FILES_STATUS=$(git diff --name-status origin/${{ github.base_ref }}...HEAD)
+          echo "File status changes:"
+          echo "$CHANGED_FILES_STATUS"
+
+          # Define resource patterns in a centralized way
+          declare -A RESOURCE_PATTERNS=(
+            ["folder"]="(live/.*/folder/|_common/templates/folder)"
+            ["project"]="(live/.*/project/|_common/templates/project)"
+            ["vpc-network"]="(live/.*/.*vpc-network/|live/.*/vpc-network/|_common/templates/network)"
+            ["external-ip"]="(live/.*/external-ips/|_common/templates/external_ip)"
+            ["firewall-rules"]="(live/.*/firewall-rules/|live/.*/firewall\.hcl$|_common/templates/firewall_rules)"
+            ["buckets"]="(live/.*/buckets/|_common/templates/cloud_storage)"
+            ["instance-template"]="(live/.*/compute/[^/]+/terragrunt\.hcl$|_common/templates/instance_template)"
+            ["compute"]="(live/.*/compute/[^/]+/vm/|_common/templates/compute_instance)"
+            ["private-service-access"]="(live/.*/.*psa/|_common/templates/private_service_access)"
+            ["secrets"]="(live/.*/secrets/|_common/templates/secret_manager)"
+            ["bigquery"]="(live/.*/bigquery/[^/]+/|_common/templates/bigquery)"
+            ["cloud-sql"]="(live/.*/cloud-sql/[^/]+/|_common/templates/cloud_sql)"
+            ["gke"]="(live/.*/gke/[^/]+/terragrunt\.hcl$|_common/templates/gke)"
+            ["project-iam-bindings"]="(live/.*/iam-bindings/|_common/templates/iam_bindings)"
+            ["instance-iam-bindings"]="(live/.*/compute/.*/iam-bindings/|_common/templates/iam_bindings)"
+            ["gke-iam-bindings"]="(live/.*/gke/.*/iam-bindings/|_common/templates/iam_bindings)"
+          )
+
+          # Check each resource type for changes
+          EXECUTION_ORDER="[]"
+          ORDER_ITEMS=()
+          NEW_COMPUTE_INSTANCES=()
+          DELETED_RESOURCES=()
+
+          # Get all deleted files for later deletion checking
+          echo "🔍 Getting list of all deleted files..."
+          DELETED_FILES=$(echo "$CHANGED_FILES_STATUS" | grep "^D" | cut -f2 || true)
+          echo "All deleted files:"
+          echo "$DELETED_FILES"
+
+          for resource_type in folder project vpc-network external-ip firewall-rules buckets instance-template compute private-service-access secrets bigquery cloud-sql gke project-iam-bindings instance-iam-bindings gke-iam-bindings; do
+            pattern="${RESOURCE_PATTERNS[$resource_type]}"
+            changes=$(echo "$CHANGED_FILES" | grep -E "$pattern" || true)
+
+            echo "Checking for $resource_type changes with pattern: $pattern"
+            echo "Matches found:"
+            echo "$changes"
+
+            if [ -n "$changes" ]; then
+              # Extract individual resource directories
+              RESOURCE_DIRS=""
+
+              echo "Processing $resource_type with changes:"
+              echo "$changes"
+              echo "Debug: About to extract RESOURCE_DIRS for $resource_type"
+
+              case "$resource_type" in
+                "folder")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/folder/" | sed -E 's|(live/.*/folder)/.*|\1|' | sort -u || true)
+                  ;;
+                "project")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/project/" | sed -E 's|(live/.*/project)/.*|\1|' | sort -u || true)
+                  ;;
+                "vpc-network")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/.*vpc-network/|live/.*/vpc-network/" | sed -E 's|(live/.*/[^/]*vpc-network)/.*|\1|' | sort -u || true)
+                  ;;
+                "external-ip")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/external-ips/[^/]+/" | sed -E 's|(live/.*/external-ips/[^/]+)/.*|\1|' | sort -u || true)
+                  ;;
+                "firewall-rules")
+                  # Match individual firewall rule directories
+                  FIREWALL_RULES_DIRS=$(echo "$changes" | grep -E "live/.*/firewall-rules/[^/]+/" | sed -E 's|(live/.*/firewall-rules/[^/]+)/.*|\1|' | sort -u || true)
+
+                  # When firewall.hcl changes, trigger ALL firewall rule directories in the same parent
+                  FIREWALL_HCL_CHANGED=$(echo "$changes" | grep -E "live/.*/firewall-rules/firewall\.hcl$" || true)
+                  if [ -n "$FIREWALL_HCL_CHANGED" ]; then
+                    # Find all firewall rule directories in the same parent as the changed firewall.hcl
+                    FIREWALL_HCL_PARENT=$(echo "$FIREWALL_HCL_CHANGED" | sed -E 's|(live/.*/firewall-rules)/firewall\.hcl|\1|')
+                    ALL_FIREWALL_RULES_IN_PARENT=$(find $FIREWALL_HCL_PARENT -maxdepth 1 -type d | grep -E ".*/firewall-rules/[^/]+$" | sort || true)
+                    FIREWALL_RULES_DIRS=$(echo -e "$FIREWALL_RULES_DIRS\n$ALL_FIREWALL_RULES_IN_PARENT" | grep -v "^$" | sort -u || true)
+                  fi
+
+                  # Handle standalone firewall.hcl files (not within firewall-rules directories)
+                  STANDALONE_FIREWALL_HCL_FILES=$(echo "$changes" | grep -E "live/.*/firewall\.hcl$" | grep -v "firewall-rules" | sed -E 's|(live/.*)/firewall\.hcl|\1|' | sort -u || true)
+                  RESOURCE_DIRS=$(echo -e "$FIREWALL_RULES_DIRS\n$STANDALONE_FIREWALL_HCL_FILES" | grep -v "^$" | sort -u || true)
+                  ;;
+                "buckets")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/buckets/[^/]+/" | sed -E 's|(live/.*/buckets/[^/]+)/.*|\1|' | sort -u || true)
+                  ;;
+                "instance-template")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/compute/[^/]+/terragrunt\.hcl$" | sed -E 's|(live/.*/compute/[^/]+)/.*|\1|' | sort -u || true)
+                  ;;
+                "compute")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/compute/[^/]+/vm/" | sed -E 's|(live/.*/compute/[^/]+/vm)/.*|\1|' | sort -u || true)
+                  ;;
+                "private-service-access")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/.*psa/" | sed -E 's|(live/.*/.*psa)/.*|\1|' | sort -u || true)
+                  ;;
+                "secrets")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/secrets/[^/]+/" | sed -E 's|(live/.*/secrets/[^/]+)/.*|\1|' | sort -u || true)
+                  ;;
+                "bigquery")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/bigquery/[^/]+/" | sed -E 's|(live/.*/bigquery/[^/]+)/.*|\1|' | sort -u || true)
+                  ;;
+                "cloud-sql")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/cloud-sql/[^/]+/" | sed -E 's|(live/.*/cloud-sql/[^/]+)/.*|\1|' | sort -u || true)
+                  ;;
+                "gke")
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/gke/[^/]+/" | sed -E 's|(live/.*/gke/[^/]+)/.*|\1|' | grep -v "/iam-bindings" | sort -u || true)
+                  ;;
+                "iam-bindings")
+                  # Project-level IAM bindings
+                  PROJECT_IAM_DIRS=$(echo "$changes" | grep -E "live/.*/iam-bindings/" | grep -v "/compute/" | grep -v "/gke/" | sed -E 's|(live/.*/iam-bindings)/.*|\1|' | sort -u || true)
+                  # Instance-level IAM bindings
+                  INSTANCE_IAM_DIRS=$(echo "$changes" | grep -E "live/.*/compute/[^/]+/iam-bindings/" | sed -E 's|(live/.*/compute/[^/]+/iam-bindings)/.*|\1|' | sort -u || true)
+                  # GKE-level IAM bindings
+                  GKE_IAM_DIRS=$(echo "$changes" | grep -E "live/.*/gke/[^/]+/iam-bindings/" | sed -E 's|(live/.*/gke/[^/]+/iam-bindings)/.*|\1|' | sort -u || true)
+                  RESOURCE_DIRS=$(echo -e "$PROJECT_IAM_DIRS\n$INSTANCE_IAM_DIRS\n$GKE_IAM_DIRS" | grep -v "^$" | sort -u || true)
+
+                  # Set separate flags for project, instance, and GKE IAM bindings
+                  if [ -n "$PROJECT_IAM_DIRS" ]; then
+                    echo "has-project-iam-bindings-changes=true" >> $GITHUB_OUTPUT
+                    echo "✅ Project IAM bindings changes detected"
+                  else
+                    echo "has-project-iam-bindings-changes=false" >> $GITHUB_OUTPUT
+                  fi
+
+                  if [ -n "$INSTANCE_IAM_DIRS" ]; then
+                    echo "has-instance-iam-bindings-changes=true" >> $GITHUB_OUTPUT
+                    echo "✅ Instance IAM bindings changes detected"
+                  else
+                    echo "has-instance-iam-bindings-changes=false" >> $GITHUB_OUTPUT
+                  fi
+
+                  if [ -n "$GKE_IAM_DIRS" ]; then
+                    echo "has-gke-iam-bindings-changes=true" >> $GITHUB_OUTPUT
+                    echo "✅ GKE IAM bindings changes detected"
+                  else
+                    echo "has-gke-iam-bindings-changes=false" >> $GITHUB_OUTPUT
+                  fi
+                  ;;
+                "project-iam-bindings")
+                  # Project-level IAM bindings only
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/iam-bindings/" | grep -v "/compute/" | grep -v "/gke/" | sed -E 's|(live/.*/iam-bindings)/.*|\1|' | sort -u || true)
+                  ;;
+                "instance-iam-bindings")
+                  # Instance-level IAM bindings only
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/compute/[^/]+/iam-bindings/" | sed -E 's|(live/.*/compute/[^/]+/iam-bindings)/.*|\1|' | sort -u || true)
+                  ;;
+                "gke-iam-bindings")
+                  # GKE-level IAM bindings only
+                  RESOURCE_DIRS=$(echo "$changes" | grep -E "live/.*/gke/[^/]+/iam-bindings/" | sed -E 's|(live/.*/gke/[^/]+/iam-bindings)/.*|\1|' | sort -u || true)
+                  ;;
+              esac
+
+              echo "Extracted RESOURCE_DIRS for $resource_type: '$RESOURCE_DIRS'"
+              echo "All $resource_type directories with changes: $RESOURCE_DIRS"
+
+              # Check if any of these resource directories have been completely deleted or are example resources
+              FILTERED_RESOURCE_DIRS=""
+              for resource_dir in $RESOURCE_DIRS; do
+                if [ -n "$resource_dir" ]; then
+                  # Extract the final folder name from the resource directory path
+                  FINAL_FOLDER_NAME=$(basename "$resource_dir")
+
+                  # Check if this is an example resource (folder name starts with "example-")
+                  if [[ "$FINAL_FOLDER_NAME" =~ ^example- ]]; then
+                    echo "🚫 Excluding example resource: $resource_dir"
+                    echo "     Reason: Folder name starts with 'example-' ($FINAL_FOLDER_NAME)"
+                    continue
+                  fi
+
+                  # Check if all files in this directory are being deleted (no additions or modifications)
+                  RESOURCE_DELETED_FILES=$(echo "$DELETED_FILES" | grep "^$resource_dir/" || true)
+                  RESOURCE_NON_DELETED_FILES=$(echo "$CHANGED_FILES" | grep "^$resource_dir/" | grep -v "$(echo "$DELETED_FILES" | grep "^$resource_dir/" || true)" || true)
+
+                  if [ -n "$RESOURCE_DELETED_FILES" ] && [ -z "$RESOURCE_NON_DELETED_FILES" ]; then
+                    echo "🗑️  Excluding completely deleted $resource_type: $resource_dir"
+                    echo "     Deleted files: $(echo "$RESOURCE_DELETED_FILES" | wc -l) files"
+                    DELETED_RESOURCES+=("$resource_dir")
+                  else
+                    echo "✅ Including $resource_type in validation: $resource_dir"
+                    if [ -n "$RESOURCE_DELETED_FILES" ]; then
+                      echo "     (has some deletions but also has additions/modifications)"
+                    fi
+                    if [ -z "$FILTERED_RESOURCE_DIRS" ]; then
+                      FILTERED_RESOURCE_DIRS="$resource_dir"
+                    else
+                      FILTERED_RESOURCE_DIRS="$FILTERED_RESOURCE_DIRS $resource_dir"
+                    fi
+                  fi
+                fi
+              done
+
+              # Trim any whitespace from FILTERED_RESOURCE_DIRS
+              FILTERED_RESOURCE_DIRS=$(echo "$FILTERED_RESOURCE_DIRS" | xargs)
+
+              # For all resource types, check if we have any non-deleted resources
+              if [ -n "$FILTERED_RESOURCE_DIRS" ]; then
+                echo "has-${resource_type}-changes=true" >> $GITHUB_OUTPUT
+                echo "✅ $resource_type changes detected (after filtering deletions and example resources)"
+                ORDER_ITEMS+=("$resource_type")
+              else
+                echo "has-${resource_type}-changes=false" >> $GITHUB_OUTPUT
+                echo "ℹ️ No $resource_type changes detected (or all were filtered out)"
+              fi
+            else
+              echo "has-${resource_type}-changes=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ No $resource_type changes detected"
+            fi
+          done
+
+          # Output new compute instances information
+          if [ ${#NEW_COMPUTE_INSTANCES[@]} -gt 0 ]; then
+            echo "has-new-compute-instances=true" >> $GITHUB_OUTPUT
+
+            # Create JSON array for new compute instances
+            TEMP_FILE=$(mktemp)
+            printf '%s\n' "${NEW_COMPUTE_INSTANCES[@]}" > "$TEMP_FILE"
+            NEW_COMPUTE_JSON=$(cat "$TEMP_FILE" | grep -v "^$" | jq -R . | jq -s -c .)
+            rm -f "$TEMP_FILE"
+
+            echo "new-compute-instances=$NEW_COMPUTE_JSON" >> $GITHUB_OUTPUT
+            echo "✅ New compute instances detected: $NEW_COMPUTE_JSON"
+          else
+            echo "has-new-compute-instances=false" >> $GITHUB_OUTPUT
+            echo "new-compute-instances=[]" >> $GITHUB_OUTPUT
+            echo "ℹ️ No new compute instances detected"
+          fi
+
+          # Output deleted resources information
+          if [ ${#DELETED_RESOURCES[@]} -gt 0 ]; then
+            # Create JSON array for deleted resources
+            TEMP_FILE=$(mktemp)
+            printf '%s\n' "${DELETED_RESOURCES[@]}" > "$TEMP_FILE"
+            DELETED_RESOURCES_JSON=$(cat "$TEMP_FILE" | grep -v "^$" | jq -R . | jq -s -c .)
+            rm -f "$TEMP_FILE"
+
+            echo "deleted-resources=$DELETED_RESOURCES_JSON" >> $GITHUB_OUTPUT
+            echo "✅ Deleted resources detected: $DELETED_RESOURCES_JSON"
+          else
+            echo "deleted-resources=[]" >> $GITHUB_OUTPUT
+            echo "ℹ️ No deleted resources detected"
+          fi
+
+
+
+          # Report deleted resources
+          if [ ${#DELETED_RESOURCES[@]} -gt 0 ]; then
+            echo ""
+            echo "🗑️  Individual resources skipped due to deletion:"
+            for resource in "${DELETED_RESOURCES[@]}"; do
+              echo "  - $resource"
+            done
+            echo ""
+            echo "ℹ️  Individual deleted resources are skipped from validation workflows because:"
+            echo "   - No validation is needed for resources being removed"
+            echo "   - Terraform destroy operations should be handled via apply workflows"
+            echo "   - Running validation on deleted resources would fail"
+            echo "   - Other resources of the same type are still processed normally"
+          fi
+
+          if [ ${#ORDER_ITEMS[@]} -gt 0 ]; then
+            # Create JSON array with robust error handling
+            echo "Creating execution order JSON array..."
+            TEMP_FILE=$(mktemp)
+            printf '%s\n' "${ORDER_ITEMS[@]}" > "$TEMP_FILE"
+
+            if [ -s "$TEMP_FILE" ]; then
+              EXECUTION_ORDER=$(cat "$TEMP_FILE" | grep -v "^$" | jq -R . | jq -s -c .)
+            else
+              EXECUTION_ORDER="[]"
+            fi
+            rm -f "$TEMP_FILE"
+
+            # Validate JSON before outputting
+            if echo "$EXECUTION_ORDER" | jq . >/dev/null 2>&1; then
+              echo "✅ Valid execution order JSON created: $EXECUTION_ORDER"
+            else
+              echo "❌ Invalid JSON detected, using empty array"
+              EXECUTION_ORDER="[]"
+            fi
+          fi
+
+          echo "execution-order=$EXECUTION_ORDER" >> $GITHUB_OUTPUT
+          echo "Execution order: $EXECUTION_ORDER"
+
+  validate-folders:
+    name: 📁 Validate Folders
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-folder-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "folder"
+      resource_paths: '["live/dev-account/**/folder/"]'
+      template_path: "_common/templates/folder"
+      resource_emoji: "📁"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-projects:
+    name: 🏗️ Validate Projects
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-project-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "project"
+      resource_paths: '["live/dev-account/**/project/"]'
+      template_path: "_common/templates/project"
+      resource_emoji: "📦"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-iam-bindings:
+    name: 🔐 Validate Project IAM Bindings
+    needs: [detect-resource-changes, validate-projects]
+    if: |
+      always() &&
+      needs.detect-resource-changes.outputs.has-project-iam-bindings-changes == 'true' &&
+      (needs.validate-projects.result == 'success' || needs.validate-projects.result == 'skipped')
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "project-iam-bindings"
+      resource_paths: '["live/*/*/*/*/iam-bindings/"]'
+      template_path: "_common/templates/iam_bindings"
+      resource_emoji: "🔐"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-vpc-networks:
+    name: 🌐 Validate VPC Networks
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-vpc-network-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "vpc-network"
+      resource_paths: '["live/dev-account/**/*-vpc-network/", "live/dev-account/**/vpc-network/"]'
+      template_path: "_common/templates/network"
+      resource_emoji: "🌐"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-external-ips:
+    name: 🌍 Validate External IPs
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-external-ip-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "external-ip"
+      resource_paths: '["live/dev-account/**/external-ips/*/"]'
+      template_path: "_common/templates/external_ip"
+      resource_emoji: "🌍"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-firewall-rules:
+    name: 🛡 Validate Firewall Rules
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-firewall-rules-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "firewall-rules"
+      resource_paths: '["live/dev-account/**/firewall-rules/*/", "live/dev-account/**/firewall-rules/"]'
+      template_path: "_common/templates/firewall_rules"
+      resource_emoji: "🛡"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-buckets:
+    name: 🪣 Validate Storage Buckets
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-buckets-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "buckets"
+      resource_paths: '["live/dev-account/**/buckets/*/"]'
+      template_path: "_common/templates/cloud_storage"
+      resource_emoji: "🪣"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-secrets:
+    name: 🔑 Validate Secrets
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-secrets-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "secrets"
+      resource_paths: '["live/dev-account/**/secrets/*/"]'
+      template_path: "_common/templates/secret_manager"
+      resource_emoji: "🔐"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-bigquery:
+    name: 📊 Validate BigQuery
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-bigquery-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "bigquery"
+      resource_paths: '["live/dev-account/**/bigquery/*/"]'
+      template_path: "_common/templates/bigquery"
+      resource_emoji: "📊"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-cloud-sql:
+    name: 🗄️ Validate Cloud SQL
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-cloud-sql-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "cloud-sql"
+      resource_paths: '["live/dev-account/**/cloud-sql/*/"]'
+      template_path: "_common/templates/cloud_sql"
+      resource_emoji: "🗄️"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-gke:
+    name: 🚀 Validate GKE Clusters
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-gke-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "gke"
+      resource_paths: '["live/dev-account/**/gke/*/"]'
+      template_path: "_common/templates/gke"
+      resource_emoji: "🚀"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-gke-iam-bindings:
+    name: 🔒 Validate GKE IAM Bindings
+    needs: [detect-resource-changes, validate-gke]
+    if: |
+      always() &&
+      needs.detect-resource-changes.outputs.has-gke-iam-bindings-changes == 'true' &&
+      (needs.validate-gke.result == 'success' || needs.validate-gke.result == 'skipped' || needs.validate-gke.result == null)
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "gke-iam-bindings"
+      resource_paths: '["live/dev-account/**/gke/*/iam-bindings/"]'
+      template_path: "_common/templates/iam_bindings"
+      resource_emoji: "🔒"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-instance-templates:
+    name: 📑 Validate Instance Templates
+    needs: [detect-resource-changes, validate-projects]
+    if: |
+      always() &&
+      needs.detect-resource-changes.outputs.has-instance-template-changes == 'true' &&
+      (needs.validate-projects.result == 'success' || needs.validate-projects.result == 'skipped')
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "instance-template"
+      resource_paths: '["live/dev-account/**/compute/*/"]'
+      template_path: "_common/templates/instance_template"
+      resource_emoji: "🚀"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-instance-iam-bindings:
+    name: 🔑 Validate Instance IAM Bindings
+    needs: [detect-resource-changes, validate-instance-templates]
+    if: |
+      always() &&
+      needs.detect-resource-changes.outputs.has-instance-iam-bindings-changes == 'true' &&
+      (needs.validate-instance-templates.result == 'success' || needs.validate-instance-templates.result == 'skipped')
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "instance-iam-bindings"
+      resource_paths: '["live/dev-account/**/compute/*/iam-bindings/"]'
+      template_path: "_common/templates/iam_bindings"
+      resource_emoji: "🔑"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-compute:
+    name: 💻 Validate Compute
+    needs: [detect-resource-changes, validate-instance-templates]
+    if: |
+      always() &&
+      needs.detect-resource-changes.outputs.has-compute-changes == 'true' &&
+      (needs.validate-instance-templates.result == 'success' || needs.validate-instance-templates.result == 'skipped')
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "compute"
+      resource_paths: '["live/dev-account/**/compute/*/vm/"]'
+      template_path: "_common/templates/compute_instance"
+      resource_emoji: "💻"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validate-private-service-access:
+    name: 🔐 Validate Private Service Access
+    needs: detect-resource-changes
+    if: needs.detect-resource-changes.outputs.has-private-service-access-changes == 'true'
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: "validate"
+      resource_type: "private-service-access"
+      resource_paths: '["live/dev-account/**/*-psa/"]'
+      template_path: "_common/templates/private_service_access"
+      resource_emoji: "🔗"
+      excluded_resources: ${{ needs.detect-resource-changes.outputs.deleted-resources }}
+    secrets:
+      TF_GOOGLE_CREDENTIALS: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+  validation-summary:
+    name: 🚧 Merge Gate
+    runs-on: ubuntu-latest
+    needs: [detect-resource-changes, validate-folders, validate-projects, validate-iam-bindings, validate-vpc-networks, validate-external-ips, validate-firewall-rules, validate-buckets, validate-instance-templates, validate-instance-iam-bindings, validate-compute, validate-private-service-access, validate-secrets, validate-bigquery, validate-cloud-sql, validate-gke, validate-gke-iam-bindings]
+    if: always()
+    outputs:
+      overall-status: ${{ steps.check-results.outputs.overall-status }}
+
+    steps:
+      - name: Check Validation Results
+        id: check-results
+        run: |
+          echo "=== Validation Results ==="
+          echo "detect-resource-changes: ${{ needs.detect-resource-changes.result }}"
+
+          # Define resource types and their job results in a centralized way
+          declare -A RESOURCE_JOBS=(
+            ["folder"]="${{ needs.validate-folders.result }}"
+            ["project"]="${{ needs.validate-projects.result }}"
+            ["vpc-network"]="${{ needs.validate-vpc-networks.result }}"
+            ["external-ip"]="${{ needs.validate-external-ips.result }}"
+            ["firewall-rules"]="${{ needs.validate-firewall-rules.result }}"
+            ["buckets"]="${{ needs.validate-buckets.result }}"
+            ["instance-template"]="${{ needs.validate-instance-templates.result }}"
+            ["project-iam-bindings"]="${{ needs.validate-iam-bindings.result }}"
+            ["instance-iam-bindings"]="${{ needs.validate-instance-iam-bindings.result }}"
+            ["compute"]="${{ needs.validate-compute.result }}"
+            ["private-service-access"]="${{ needs.validate-private-service-access.result }}"
+            ["secrets"]="${{ needs.validate-secrets.result }}"
+            ["bigquery"]="${{ needs.validate-bigquery.result }}"
+            ["cloud-sql"]="${{ needs.validate-cloud-sql.result }}"
+            ["gke"]="${{ needs.validate-gke.result }}"
+            ["gke-iam-bindings"]="${{ needs.validate-gke-iam-bindings.result }}"
+          )
+
+          declare -A RESOURCE_DISPLAY=(
+            ["folder"]="Folder"
+            ["project"]="Project"
+            ["vpc-network"]="VPC Network"
+            ["external-ip"]="External IP"
+            ["firewall-rules"]="Firewall Rules"
+            ["buckets"]="Storage Buckets"
+            ["instance-template"]="Instance Template"
+            ["project-iam-bindings"]="Project IAM Bindings"
+            ["instance-iam-bindings"]="Instance IAM Bindings"
+            ["compute"]="Compute Instance"
+            ["private-service-access"]="Private Service Access"
+            ["secrets"]="Secrets"
+            ["bigquery"]="BigQuery"
+            ["cloud-sql"]="Cloud SQL"
+            ["gke"]="GKE Clusters"
+            ["gke-iam-bindings"]="GKE IAM Bindings"
+          )
+
+          # Parse execution order
+          EXECUTION_ORDER='${{ needs.detect-resource-changes.outputs.execution-order }}'
+          echo "Planned execution order: $EXECUTION_ORDER"
+
+          # Show detailed job status for all resources
+          echo ""
+          echo "=== Detailed Job Status ==="
+          for resource_type in folder project vpc-network external-ip firewall-rules buckets instance-template compute private-service-access secrets bigquery cloud-sql gke project-iam-bindings instance-iam-bindings gke-iam-bindings; do
+            result="${RESOURCE_JOBS[$resource_type]}"
+            display="${RESOURCE_DISPLAY[$resource_type]}"
+
+            # Check if this resource was supposed to run
+            SHOULD_RUN="false"
+            if echo "$EXECUTION_ORDER" | jq -e ". | contains([\"$resource_type\"])" > /dev/null 2>&1; then
+              SHOULD_RUN="true"
+            fi
+
+            echo "Resource: $display"
+            echo "  - Should run: $SHOULD_RUN"
+            echo "  - Actual result: $result"
+
+            if [ "$SHOULD_RUN" == "true" ]; then
+              if [ "$result" == "success" ]; then
+                echo "  - Status: ✅ PASSED"
+              elif [ "$result" == "failure" ]; then
+                echo "  - Status: ❌ FAILED"
+              elif [ "$result" == "skipped" ]; then
+                echo "  - Status: ⏸️ SKIPPED (unexpected)"
+              elif [ "$result" == "" ] || [ "$result" == "null" ]; then
+                echo "  - Status: ⚠️ NOT RUN (unexpected)"
+              else
+                echo "  - Status: ❓ UNKNOWN ($result)"
+              fi
+            else
+              echo "  - Status: ⏸️ NOT SCHEDULED (no changes detected)"
+            fi
+            echo ""
+          done
+
+          # Aggregate results for jobs that were supposed to run
+          OVERALL_STATUS="success"
+          FAILED_JOBS=()
+          SKIPPED_JOBS=()
+          SUCCESS_JOBS=()
+          NOT_RUN_JOBS=()
+
+          # Parse execution order to get list of jobs that should have run
+          if [ "$EXECUTION_ORDER" != "[]" ] && [ -n "$EXECUTION_ORDER" ]; then
+            PLANNED_JOBS=$(echo "$EXECUTION_ORDER" | jq -r '.[]' 2>/dev/null || echo "")
+
+            for resource_type in $PLANNED_JOBS; do
+            result="${RESOURCE_JOBS[$resource_type]}"
+            display="${RESOURCE_DISPLAY[$resource_type]}"
+
+              echo "Evaluating planned job: $display ($resource_type) = $result"
+
+            if [ "$result" == "failure" ]; then
+              echo "❌ $display validation failed"
+              FAILED_JOBS+=("$resource_type")
+              OVERALL_STATUS="failure"
+            elif [ "$result" == "success" ]; then
+              echo "✅ $display validation passed"
+              SUCCESS_JOBS+=("$resource_type")
+              elif [ "$result" == "skipped" ]; then
+                echo "⏸️ $display validation skipped (unexpected for planned job)"
+                SKIPPED_JOBS+=("$resource_type")
+                OVERALL_STATUS="failure"  # Planned jobs shouldn't be skipped
+            elif [ "$result" == "" ] || [ "$result" == "null" ]; then
+                echo "⚠️ $display validation not run (unexpected for planned job)"
+                NOT_RUN_JOBS+=("$resource_type")
+                OVERALL_STATUS="failure"  # Planned jobs should run
+              else
+                echo "❓ $display validation unknown status: $result"
+                SKIPPED_JOBS+=("$resource_type")
+                OVERALL_STATUS="failure"
+              fi
+            done
+            else
+            echo "No jobs were planned to run (no resource changes detected)"
+            fi
+
+          # Output results
+          echo "overall-status=$OVERALL_STATUS" >> $GITHUB_OUTPUT
+
+          # Convert arrays to comma-separated strings for output
+          FAILED_LIST=$(IFS=,; echo "${FAILED_JOBS[*]}")
+          SKIPPED_LIST=$(IFS=,; echo "${SKIPPED_JOBS[*]}")
+          SUCCESS_LIST=$(IFS=,; echo "${SUCCESS_JOBS[*]}")
+          NOT_RUN_LIST=$(IFS=,; echo "${NOT_RUN_JOBS[*]}")
+
+          echo "failed-jobs=$FAILED_LIST" >> $GITHUB_OUTPUT
+          echo "skipped-jobs=$SKIPPED_LIST" >> $GITHUB_OUTPUT
+          echo "success-jobs=$SUCCESS_LIST" >> $GITHUB_OUTPUT
+          echo "not-run-jobs=$NOT_RUN_LIST" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "=== Final Summary ==="
+          echo "Overall validation status: $OVERALL_STATUS"
+          echo "Successful jobs: $SUCCESS_LIST"
+          echo "Failed jobs: $FAILED_LIST"
+          echo "Skipped jobs: $SKIPPED_LIST"
+
+          # CRITICAL: Fail the job if overall status is failure
+          if [ "$OVERALL_STATUS" == "failure" ]; then
+            echo ""
+            echo "❌ FAILING WORKFLOW: One or more validations failed"
+            echo "Failed jobs: $FAILED_LIST"
+            echo "This workflow is now marked as FAILED to prevent merging"
+            exit 1
+          fi
+
+      - name: Generate Validation Summary
+        run: |
+          # Determine overall status and styling
+          OVERALL_STATUS="${{ steps.check-results.outputs.overall-status }}"
+          FAILED_JOBS="${{ steps.check-results.outputs.failed-jobs }}"
+          SKIPPED_JOBS="${{ steps.check-results.outputs.skipped-jobs }}"
+          SUCCESS_JOBS="${{ steps.check-results.outputs.success-jobs }}"
+          EXECUTION_ORDER='${{ needs.detect-resource-changes.outputs.execution-order }}'
+
+          if [ "$OVERALL_STATUS" == "success" ]; then
+            STATUS_ICON="✅"
+            STATUS_COLOR="🟢"
+            STATUS_TEXT="SUCCESS"
+          else
+            STATUS_ICON="❌"
+            STATUS_COLOR="🔴"
+            STATUS_TEXT="FAILED"
+          fi
+
+          echo "## 🎯 Terragrunt PR Validation Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${STATUS_COLOR} **OVERALL STATUS: ${STATUS_TEXT}** ${STATUS_ICON}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${{ github.event.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.head_ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow:** [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show execution order and results
+          echo "### 🔄 Execution Order & Results" >> $GITHUB_STEP_SUMMARY
+          echo "**Dependency Tree:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "📁 folder" >> $GITHUB_STEP_SUMMARY
+          echo "└── 📦 project" >> $GITHUB_STEP_SUMMARY
+          echo "    ├── 🔐 iam-bindings" >> $GITHUB_STEP_SUMMARY
+          echo "    ├── 🌐 vpc-network" >> $GITHUB_STEP_SUMMARY
+          echo "    │   ├── 🌍 external-ip" >> $GITHUB_STEP_SUMMARY
+          echo "    │   ├── 🔥 firewall-rules" >> $GITHUB_STEP_SUMMARY
+          echo "    │   ├── 🔗 private-service-access" >> $GITHUB_STEP_SUMMARY
+          echo "    │   │   └── 🗄️ cloud-sql" >> $GITHUB_STEP_SUMMARY
+          echo "    │   └── 🚀 instance-templates" >> $GITHUB_STEP_SUMMARY
+          echo "    │       └── 💻 compute" >> $GITHUB_STEP_SUMMARY
+          echo "    ├── 🪣 buckets" >> $GITHUB_STEP_SUMMARY
+          echo "    ├── 🔐 secrets" >> $GITHUB_STEP_SUMMARY
+          echo "    └── 📊 bigquery" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Parse execution order and show status for each
+          if echo "$EXECUTION_ORDER" | jq -e '. | length > 0' > /dev/null || [ "${{ needs.detect-resource-changes.outputs.has-new-compute-instances }}" == "true" ]; then
+            echo "| Step | Resource Type | Status | Result |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|---------------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+            # Define resource metadata
+            declare -A RESOURCE_META=(
+              ["folder"]="📁 Folder"
+              ["project"]="📦 Project"
+              ["vpc-network"]="🌐 VPC Network"
+              ["external-ip"]="🌍 External IP"
+              ["firewall-rules"]="🔥 Firewall Rules"
+              ["private-service-access"]="🔗 Private Service Access"
+              ["secrets"]="🔐 Secret"
+              ["instance-template"]="🚀 Instance Template"
+              ["compute"]="💻 Compute Instance"
+              ["bigquery"]="📊 BigQuery"
+              ["cloud-sql"]="🗄️ Cloud SQL"
+              ["project-iam-bindings"]="🔐 Project IAM Bindings"
+              ["instance-iam-bindings"]="🔑 Instance IAM Bindings"
+            )
+
+            declare -A RESOURCE_RESULTS=(
+              ["folder"]="${{ needs.validate-folders.result }}"
+              ["project"]="${{ needs.validate-projects.result }}"
+              ["vpc-network"]="${{ needs.validate-vpc-networks.result }}"
+              ["external-ip"]="${{ needs.validate-external-ips.result }}"
+              ["firewall-rules"]="${{ needs.validate-firewall-rules.result }}"
+              ["private-service-access"]="${{ needs.validate-private-service-access.result }}"
+              ["secrets"]="${{ needs.validate-secrets.result }}"
+              ["instance-template"]="${{ needs.validate-instance-templates.result }}"
+              ["compute"]="${{ needs.validate-compute.result }}"
+              ["bigquery"]="${{ needs.validate-bigquery.result }}"
+              ["cloud-sql"]="${{ needs.validate-cloud-sql.result }}"
+              ["project-iam-bindings"]="${{ needs.validate-iam-bindings.result }}"
+              ["instance-iam-bindings"]="${{ needs.validate-instance-iam-bindings.result }}"
+            )
+
+            # Show all planned jobs in execution order
+            PLANNED_JOBS=$(echo "$EXECUTION_ORDER" | jq -r '.[]' 2>/dev/null || echo "")
+
+            for resource_type in $PLANNED_JOBS; do
+              RESULT="${RESOURCE_RESULTS[$resource_type]}"
+              DISPLAY="${RESOURCE_META[$resource_type]}"
+
+              # Determine step number based on resource type
+              STEP_LABEL=""
+              case "$resource_type" in
+                "folder") STEP_LABEL="1" ;;
+                "project") STEP_LABEL="2" ;;
+                "project-iam-bindings") STEP_LABEL="3" ;;
+                "instance-iam-bindings") STEP_LABEL="4-5" ;;
+                "vpc-network") STEP_LABEL="3" ;;
+                "external-ip") STEP_LABEL="4-1" ;;
+                "firewall-rules") STEP_LABEL="4-2" ;;
+                "private-service-access") STEP_LABEL="4-3" ;;
+                "secrets") STEP_LABEL="3" ;;
+                "buckets") STEP_LABEL="3" ;;
+                "bigquery") STEP_LABEL="3" ;;
+                "cloud-sql") STEP_LABEL="5" ;;
+                "instance-template") STEP_LABEL="4-4" ;;
+                "compute") STEP_LABEL="6" ;;
+                *) STEP_LABEL="?" ;;
+              esac
+
+                if [ "$RESULT" == "success" ]; then
+                  STATUS_EMOJI="✅"
+                  STATUS_TEXT="PASSED"
+                elif [ "$RESULT" == "failure" ]; then
+                  STATUS_EMOJI="❌"
+                  STATUS_TEXT="FAILED"
+                elif [ "$RESULT" == "skipped" ]; then
+                  STATUS_EMOJI="⏸️"
+                  STATUS_TEXT="SKIPPED"
+              elif [ "$RESULT" == "" ] || [ "$RESULT" == "null" ]; then
+                STATUS_EMOJI="⚠️"
+                  STATUS_TEXT="NOT RUN"
+              else
+                STATUS_EMOJI="❓"
+                STATUS_TEXT="UNKNOWN"
+              fi
+
+              echo "| $STEP_LABEL | $DISPLAY | $STATUS_EMOJI $STATUS_TEXT | $RESULT |" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "No resource changes detected in this PR." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show detailed results
+          echo "### 📊 Detailed Results" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$OVERALL_STATUS" == "success" ]; then
+            echo "- **✅ All validations passed** - Ready for review and merge" >> $GITHUB_STEP_SUMMARY
+            echo "- **🔄 Execution order respected** - Dependencies validated in correct sequence" >> $GITHUB_STEP_SUMMARY
+            echo "- **📋 Individual PR comments** posted for each resource type with detailed results" >> $GITHUB_STEP_SUMMARY
+            echo "- **⏭️ New VM pairs** automatically skipped from validation (no existing state to validate)" >> $GITHUB_STEP_SUMMARY
+            echo "- **🗑️ Individual deleted resources** automatically filtered out (other resources still processed)" >> $GITHUB_STEP_SUMMARY
+            echo "- **🚀 Instance templates** always applied when changed to ensure compute instances have latest templates" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **❌ Validation failed** - One or more validation jobs failed or were skipped" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$FAILED_JOBS" ]; then
+              echo "- **🚫 Failed jobs:** $FAILED_JOBS" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "$SKIPPED_JOBS" ]; then
+              echo "- **⏸️ Skipped jobs:** $SKIPPED_JOBS" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "- **⏭️ New VM pairs** automatically skipped from validation (no existing state to validate)" >> $GITHUB_STEP_SUMMARY
+            echo "- **🗑️ Individual deleted resources** automatically filtered out (other resources still processed)" >> $GITHUB_STEP_SUMMARY
+            echo "- **🚀 Instance templates** always applied when changed to ensure compute instances have latest templates" >> $GITHUB_STEP_SUMMARY
+            echo "- **🔧 Fix the failed/skipped jobs** and push new commits to re-trigger validation" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Status-specific next steps
+          if [ "$OVERALL_STATUS" == "success" ]; then
+            echo "### 🚀 Next Steps (Success)" >> $GITHUB_STEP_SUMMARY
+            echo "- **✅ All dependency validations passed** - Infrastructure changes are ready" >> $GITHUB_STEP_SUMMARY
+            echo "- **📋 Review individual PR comments** for detailed plan output and dependencies" >> $GITHUB_STEP_SUMMARY
+            echo "- **🔀 Merge when ready** - This will trigger automatic deployment in dependency order" >> $GITHUB_STEP_SUMMARY
+            echo "- **📊 Infrastructure changes** have been planned and validated across all resource types" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### 🚨 Next Steps (Failure)" >> $GITHUB_STEP_SUMMARY
+            echo "- **❌ Engine validation failed** - One or more jobs failed or were skipped" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$FAILED_JOBS" ]; then
+              echo "- **🚫 Failed jobs:** $FAILED_JOBS - Review errors in these resource types" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "$SKIPPED_JOBS" ]; then
+              echo "- **⏸️ Skipped jobs:** $SKIPPED_JOBS - These jobs were skipped due to failures or conditions" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "- **📋 Check PR comments** for specific error details from failed resource types" >> $GITHUB_STEP_SUMMARY
+            echo "- **🔍 Review workflow logs** for complete error information" >> $GITHUB_STEP_SUMMARY
+            echo "- **🔧 Fix configuration issues** in the failed resource types and push new commits" >> $GITHUB_STEP_SUMMARY
+            echo "- **🔄 Re-run validation** will happen automatically on new commits" >> $GITHUB_STEP_SUMMARY
+            echo "- **⚠️ Dependency order** ensures that foundational resources (folders, projects) are validated first" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment PR with Validation Results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const overallStatus = '${{ steps.check-results.outputs.overall-status }}';
+            const failedJobs = '${{ steps.check-results.outputs.failed-jobs }}';
+            const skippedJobs = '${{ steps.check-results.outputs.skipped-jobs }}';
+            const successJobs = '${{ steps.check-results.outputs.success-jobs }}';
+            const executionOrder = '${{ needs.detect-resource-changes.outputs.execution-order }}';
+            const sha = '${{ github.sha }}';
+
+            // Determine status styling
+            let statusIcon = '';
+            let statusColor = '';
+            let overallStatusText = '';
+
+            if (overallStatus === 'success') {
+              statusIcon = '✅';
+              statusColor = '🟢';
+              overallStatusText = 'ALL VALIDATIONS PASSED';
+            } else {
+              statusIcon = '❌';
+              statusColor = '🔴';
+              overallStatusText = 'VALIDATION FAILED';
+            }
+
+            // Build execution results table
+            let executionTable = '';
+            const resourceInfo = {
+              'folder': { emoji: '📁', display: 'Folder', result: '${{ needs.validate-folders.result }}' },
+              'project': { emoji: '📦', display: 'Project', result: '${{ needs.validate-projects.result }}' },
+              'vpc-network': { emoji: '🌐', display: 'VPC Network', result: '${{ needs.validate-vpc-networks.result }}' },
+              'external-ip': { emoji: '🌍', display: 'External IP', result: '${{ needs.validate-external-ips.result }}' },
+              'firewall-rules': { emoji: '🔥', display: 'Firewall Rules', result: '${{ needs.validate-firewall-rules.result }}' },
+              'buckets': { emoji: '🪣', display: 'Storage Buckets', result: '${{ needs.validate-buckets.result }}' },
+              'private-service-access': { emoji: '🔗', display: 'Private Service Access', result: '${{ needs.validate-private-service-access.result }}' },
+              'secrets': { emoji: '🔐', display: 'Secret', result: '${{ needs.validate-secrets.result }}' },
+              'bigquery': { emoji: '📊', display: 'BigQuery', result: '${{ needs.validate-bigquery.result }}' },
+              'cloud-sql': { emoji: '🗄️', display: 'Cloud SQL', result: '${{ needs.validate-cloud-sql.result }}' },
+              'instance-template': { emoji: '🚀', display: 'Instance Template', result: '${{ needs.validate-instance-templates.result }}' },
+              'compute': { emoji: '💻', display: 'Compute Instance', result: '${{ needs.validate-compute.result }}' },
+              'project-iam-bindings': { emoji: '🔐', display: 'Project IAM Bindings', result: '${{ needs.validate-iam-bindings.result }}' },
+              'instance-iam-bindings': { emoji: '🔑', display: 'Instance IAM Bindings', result: '${{ needs.validate-instance-iam-bindings.result }}' }
+            };
+
+            try {
+              const plannedOrder = JSON.parse(executionOrder);
+              if (plannedOrder.length > 0) {
+                executionTable = `
+            ### 🔄 Execution Results
+
+            | Step | Resource Type | Status | Result |
+            |------|---------------|--------|--------|`;
+
+                // Process resources in simplified dependency order
+                const resourceSteps = {
+                  'folder': '1',
+                  'project': '2',
+                  'project-iam-bindings': '3',
+                  'instance-iam-bindings': '4-5',
+                  'vpc-network': '3',
+                  'external-ip': '4-1',
+                  'firewall-rules': '4-2',
+                  'private-service-access': '4-3',
+                  'secrets': '3',
+                  'buckets': '3',
+                  'bigquery': '3',
+                  'cloud-sql': '5',
+                  'instance-template': '4-4',
+                  'compute': '6'
+                };
+
+                // Process all planned resources in order
+                for (const resource of plannedOrder) {
+                  if (resourceInfo[resource]) {
+                    const info = resourceInfo[resource];
+                    const stepLabel = resourceSteps[resource] || '?';
+                    let statusEmoji = '';
+                    let statusText = '';
+
+                    if (info.result === 'success') {
+                      statusEmoji = '✅';
+                      statusText = 'PASSED';
+                    } else if (info.result === 'failure') {
+                      statusEmoji = '❌';
+                      statusText = 'FAILED';
+                    } else if (info.result === 'skipped') {
+                      statusEmoji = '⏸️';
+                      statusText = 'SKIPPED';
+                    } else {
+                      statusEmoji = '⏸️';
+                      statusText = 'NOT RUN';
+                    }
+
+                    executionTable += `\n| ${stepLabel} | ${info.emoji} ${info.display} | ${statusEmoji} ${statusText} | ${info.result} |`;
+                  }
+                }
+              } else {
+                executionTable = `
+            ### ℹ️ No Resource Changes
+            No infrastructure resource changes detected in this PR.`;
+              }
+            } catch (error) {
+              executionTable = `
+            ### ⚠️ Execution Order Parse Error
+            Could not parse execution order: ${executionOrder}`;
+            }
+
+            // Build next steps section
+            let nextStepsSection = '';
+            if (overallStatus === 'success') {
+              nextStepsSection = `
+            ### 🚀 Next Steps:
+            - **✅ All dependency validations passed** - Infrastructure changes are ready
+            - **📋 Review individual PR comments** for detailed plan output and dependencies
+            - **🔀 Merge when ready** - This will trigger automatic deployment in dependency order
+            - **📊 Infrastructure changes** have been planned and validated across all resource types`;
+            } else {
+              let failureDetails = '';
+              if (failedJobs) {
+                failureDetails += `\n            - **🚫 Failed jobs:** ${failedJobs} - Review errors in these resource types`;
+              }
+              if (skippedJobs) {
+                failureDetails += `\n            - **⏸️ Skipped jobs:** ${skippedJobs} - These jobs were skipped due to failures or conditions`;
+              }
+
+              nextStepsSection = `
+            ### 🚨 Next Steps:
+            - **❌ Engine validation failed** - One or more jobs failed or were skipped${failureDetails}
+            - **📋 Check individual PR comments** for specific error details from failed resource types
+            - **🔧 Fix configuration issues** in the failed resource types and push new commits
+            - **🔄 Re-run validation** will happen automatically on new commits`;
+            }
+
+            const comment = `## 🎯 Terragrunt PR Validation Results
+
+            ${statusColor} **Status: ${overallStatusText}** ${statusIcon}
+
+            **Commit:** \`${sha.substring(0, 7)}\`
+            **Workflow:** [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            ${executionTable}
+
+            ${nextStepsSection}
+
+            ---
+            <details>
+            <summary>🔍 About Engine Validation</summary>
+
+            This engine ensures that infrastructure resources are validated in the correct dependency order:
+
+            1. **📁 Folders** - Foundation organizational structure
+            2. **📦 Projects** - GCP projects that depend on folders
+            3. **🔐 IAM Bindings** + **🌐 VPC Networks** + **🔐 Secrets** + **🪣 Buckets** + **📊 BigQuery** - Run in parallel after projects
+            4. **🌍 External IPs** + **🔥 Firewall Rules** + **🔗 Private Service Access** + **🚀 Instance Templates** - Run in parallel after VPC
+            5. **🗄️ Cloud SQL** - Database instances that depend on private service access
+            6. **💻 Compute Instances** - Virtual machines that depend on instance templates
+
+            **Validation stops at the first failure** to prevent cascading issues and ensure that foundational resources are validated before dependent resources.
+
+            **Instance Template Behavior:**
+            - **Always applied when changed** - Instance templates are applied (not just validated) to ensure compute instances have the latest template configuration
+            - **Compute instances** are then validated against the updated templates
+            - This ensures that template changes are deployed before validating dependent compute instances
+            </details>
+            `;
+
+            // Find existing engine comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const engineComment = comments.data.find(comment => {
+              const isBot = comment.user.type === 'Bot';
+              const isEngine = comment.body.includes('Terragrunt PR Validation Results');
+              return isBot && isEngine;
+            });
+
+            if (engineComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: engineComment.id,
+                body: comment
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }

@@ -1,0 +1,855 @@
+name: Terragrunt Unified (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "Operation mode: apply or validate"
+        required: true
+        type: string
+      resource_type:
+        description: "Type of resource (folder, project, vpc-network, external-ip, firewall-rules, secrets, instance-template, compute, private-service-access, gke, gke-iam-bindings)"
+        required: true
+        type: string
+      resource_paths:
+        description: "JSON array of paths to monitor for changes"
+        required: true
+        type: string
+      template_path:
+        description: "Path to common template files"
+        required: true
+        type: string
+      resource_emoji:
+        description: "Emoji to use in PR comments"
+        required: false
+        type: string
+        default: "📦"
+      excluded_resources:
+        description: "JSON array of resource paths to exclude (deleted resources)"
+        required: false
+        type: string
+        default: "[]"
+    secrets:
+      TF_GOOGLE_CREDENTIALS:
+        description: "GCP service account credentials"
+        required: true
+    outputs:
+      operation_status:
+        description: "Overall operation status (success or failure)"
+        value: ${{ jobs.operation-summary.outputs.overall-status }}
+      has_changes:
+        description: "Whether changes were detected"
+        value: ${{ jobs.detect-changes.outputs.has-changes }}
+      changed_resources:
+        description: "JSON array of changed resources"
+        value: ${{ jobs.detect-changes.outputs.resources }}
+
+jobs:
+  get-env:
+    name: 📋 Get ENV
+    uses: ./.github/workflows/common-env.yml
+
+  detect-changes:
+    name: 🔍 Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      resources: ${{ steps.changes.outputs.resources }}
+      has-changes: ${{ steps.changes.outputs.has-changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed ${{ inputs.resource_type }} configurations
+        id: changes
+        run: |
+          # Get list of changed files - handle both PR and push events
+          set +e
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # For pull requests, compare with base branch
+            if [ -n "${{ github.base_ref }}" ]; then
+              CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}..HEAD 2>/dev/null || echo "")
+              echo "🔄 PR detected - comparing with base branch: ${{ github.base_ref }}"
+            else
+              echo "⚠️ PR base_ref not available, using HEAD~1"
+              CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || git ls-files 2>/dev/null || echo "")
+            fi
+          else
+            # For push events, compare with previous commit on the same branch
+            echo "🚀 Push event detected - comparing with previous commit"
+            USE_HEAD_PREV=true
+
+            # Check if github.event.before is valid and exists
+            if [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+              # Test if the before commit exists (suppress all output)
+              if git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+                echo "✅ Using github.event.before commit for change detection"
+                CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null || echo "")
+                if [ -n "$CHANGED_FILES" ]; then
+                  USE_HEAD_PREV=false
+                fi
+              else
+                echo "⚠️ github.event.before commit (${{ github.event.before }}) not found in repository"
+              fi
+            fi
+
+            # Fallback to HEAD~1 if github.event.before is not usable
+            if [ "$USE_HEAD_PREV" = true ]; then
+              if git cat-file -e HEAD~1 2>/dev/null; then
+                echo "✅ Using HEAD~1 for change detection"
+                CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+              else
+                echo "⚠️ HEAD~1 not available, treating all files as changed (first commit scenario)"
+                CHANGED_FILES=$(git ls-files 2>/dev/null || echo "")
+              fi
+            fi
+          fi
+
+          # Re-enable error exit
+          set -e
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Parse resource paths from input
+          RESOURCE_PATHS='${{ inputs.resource_paths }}'
+          echo "Resource paths to monitor: $RESOURCE_PATHS"
+
+          # Build grep pattern from resource paths
+          GREP_PATTERN=""
+          for path in $(echo "$RESOURCE_PATHS" | jq -r '.[]'); do
+            # Convert glob patterns to regex for grep
+            # First replace ** with a placeholder, then * with [^/]*, then placeholder with .*
+            regex_path=$(echo "$path" | sed 's|\*\*|DOUBLESTAR|g' | sed 's|\*|[^/]*|g' | sed 's|DOUBLESTAR|.*|g')
+            if [ -n "$GREP_PATTERN" ]; then
+              GREP_PATTERN="$GREP_PATTERN|$regex_path"
+            else
+              GREP_PATTERN="$regex_path"
+            fi
+          done
+
+          # Add template path to pattern
+          TEMPLATE_PATH="${{ inputs.template_path }}"
+          if [ -n "$TEMPLATE_PATH" ]; then
+            GREP_PATTERN="$GREP_PATTERN|$TEMPLATE_PATH"
+          fi
+
+          echo "Grep pattern: $GREP_PATTERN"
+
+          # Debug: Show which files match the grep pattern
+          echo "Files matching grep pattern:"
+          echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" || echo "No files match the grep pattern"
+
+          # Find configurations that changed within live/dev-account/
+          if [ "${{ inputs.resource_type }}" == "secrets" ]; then
+            # For secrets, we need to match the parent directory structure: live/.../secrets/secret-name/
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep "live.*secrets/[^/]*$" || true)
+          elif [ "${{ inputs.resource_type }}" == "instance-template" ]; then
+            # For instance templates, match the worker directory with terragrunt.hcl (instance-template config)
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | grep -E "live.*/compute/[^/]+/terragrunt\.hcl$" | sed -E 's|(live/.*/compute/[^/]+)/.*|\1|' | sort -u || true)
+          elif [ "${{ inputs.resource_type }}" == "compute" ]; then
+            # For compute instances, match the vm subdirectory
+            echo "Debug: Looking for compute files matching pattern: live.*/compute/[^/]+/vm/"
+            MATCHING_FILES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | grep -E "live.*/compute/[^/]+/vm/" || true)
+            echo "Debug: Matching compute files:"
+            echo "$MATCHING_FILES"
+            CHANGED_RESOURCES=$(echo "$MATCHING_FILES" | sed -E 's|(live/.*/compute/[^/]+/vm)/.*|\1|' | sort -u || true)
+          elif [ "${{ inputs.resource_type }}" == "private-service-access" ]; then
+            # For private service access, match directories ending with -psa
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*-psa/?$" || true)
+          elif [ "${{ inputs.resource_type }}" == "external-ip" ]; then
+            # For external IPs, match directories under external-ips/
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/external-ips/[^/]+/?$" || true)
+          elif [ "${{ inputs.resource_type }}" == "firewall-rules" ]; then
+            # For firewall rules, match individual rule directories
+            INDIVIDUAL_RULES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/firewall-rules/[^/]+/?$" || true)
+
+            # When firewall.hcl changes, trigger ALL firewall rule directories in the same parent
+            FIREWALL_HCL_CHANGED=$(echo "$CHANGED_FILES" | grep -E "live.*/firewall-rules/firewall\.hcl$" || true)
+            if [ -n "$FIREWALL_HCL_CHANGED" ]; then
+              # Find all firewall rule directories in the same parent as the changed firewall.hcl
+              FIREWALL_HCL_PARENT=$(echo "$FIREWALL_HCL_CHANGED" | sed -E 's|(live/.*/firewall-rules)/firewall\.hcl|\1|')
+              ALL_FIREWALL_RULES_IN_PARENT=$(find $FIREWALL_HCL_PARENT -maxdepth 1 -type d | grep -E ".*/firewall-rules/[^/]+$" | sort || true)
+              INDIVIDUAL_RULES=$(echo -e "$INDIVIDUAL_RULES\n$ALL_FIREWALL_RULES_IN_PARENT" | grep -v "^$" | sort -u || true)
+            fi
+
+            CHANGED_RESOURCES="$INDIVIDUAL_RULES"
+          elif [ "${{ inputs.resource_type }}" == "buckets" ]; then
+            # For buckets, match individual bucket directories
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/buckets/[^/]+/?$" || true)
+          elif [ "${{ inputs.resource_type }}" == "bigquery" ]; then
+            # For bigquery, match individual dataset directories
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/bigquery/[^/]+/?$" || true)
+          elif [ "${{ inputs.resource_type }}" == "cloud-sql" ]; then
+            # For cloud-sql, match individual SQL instance directories
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/cloud-sql/[^/]+/?$" || true)
+          elif [ "${{ inputs.resource_type }}" == "project-iam-bindings" ]; then
+            # For project-level IAM bindings, match iam-bindings directories not under compute
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | grep -v "/compute/" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/iam-bindings/?$" || true)
+          elif [ "${{ inputs.resource_type }}" == "instance-iam-bindings" ]; then
+            # For instance-level IAM bindings, match iam-bindings directories under compute
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | grep -E "live.*/compute/[^/]+/iam-bindings/" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*/compute/[^/]+/iam-bindings/?$" || true)
+          else
+            # For other resource types, match the resource type directory directly
+            CHANGED_RESOURCES=$(echo "$CHANGED_FILES" | grep -E "($GREP_PATTERN)" | grep -v ".terragrunt-cache" | sed 's|/[^/]*$||' | sort -u | grep -E "live.*${{ inputs.resource_type }}/?$" || true)
+          fi
+
+          # If common templates changed, find all resource directories in live/dev-account/
+          TEMPLATE_CHANGED=$(echo "$CHANGED_FILES" | grep "$TEMPLATE_PATH" || true)
+
+
+
+          if [ -n "$TEMPLATE_CHANGED" ]; then
+            echo "Common ${{ inputs.resource_type }} template(s) changed, including all ${{ inputs.resource_type }} configurations in live/dev-account/"
+            if [ "${{ inputs.resource_type }}" == "secrets" ]; then
+              ALL_RESOURCES=$(find live/dev-account -path "*/secrets/*" -type d | grep -v ".terragrunt-cache" | grep "secrets/[^/]*$" || true)
+            elif [ "${{ inputs.resource_type }}" == "instance-template" ]; then
+              ALL_RESOURCES=$(find live/dev-account -path "*/compute/*" -name "terragrunt.hcl" -type f | sed 's|/terragrunt.hcl$||' | grep -v ".terragrunt-cache" | grep -E "live/.*/compute/[^/]+$" || true)
+            elif [ "${{ inputs.resource_type }}" == "compute" ]; then
+              ALL_RESOURCES=$(find live/dev-account -path "*/compute/*/vm" -type d | grep -v ".terragrunt-cache" || true)
+            elif [ "${{ inputs.resource_type }}" == "private-service-access" ]; then
+              ALL_RESOURCES=$(find live/dev-account -name "*-psa" -type d | grep -v ".terragrunt-cache" || true)
+            elif [ "${{ inputs.resource_type }}" == "external-ip" ]; then
+              ALL_RESOURCES=$(find live/dev-account -path "*/external-ips/*" -type d | grep -v ".terragrunt-cache" | grep -E "live/.*/external-ips/[^/]+$" || true)
+            elif [ "${{ inputs.resource_type }}" == "firewall-rules" ]; then
+              # Find both individual firewall rule directories and parent firewall-rules directories
+              INDIVIDUAL_RULE_DIRS=$(find live/dev-account -path "*/firewall-rules/*" -type d | grep -v ".terragrunt-cache" | grep -E "live/.*/firewall-rules/[^/]+$" || true)
+              PARENT_RULE_DIRS=$(find live/dev-account -name "firewall-rules" -type d | grep -v ".terragrunt-cache" || true)
+              ALL_RESOURCES=$(echo -e "$INDIVIDUAL_RULE_DIRS\n$PARENT_RULE_DIRS" | grep -v "^$" | sort -u || true)
+            elif [ "${{ inputs.resource_type }}" == "buckets" ]; then
+              # For buckets, find individual bucket directories only (not the base buckets directory)
+              ALL_RESOURCES=$(find live/dev-account -path "*/buckets/*" -type d | grep -v ".terragrunt-cache" | grep -E "live/.*/buckets/[^/]+$" || true)
+            elif [ "${{ inputs.resource_type }}" == "bigquery" ]; then
+              # For bigquery, find individual dataset directories only (not the base bigquery directory)
+              ALL_RESOURCES=$(find live/dev-account -path "*/bigquery/*" -type d | grep -v ".terragrunt-cache" | grep -E "live/.*/bigquery/[^/]+$" || true)
+            elif [ "${{ inputs.resource_type }}" == "cloud-sql" ]; then
+              # For cloud-sql, find individual SQL instance directories only (not the base cloud-sql directory)
+              ALL_RESOURCES=$(find live/dev-account -path "*/cloud-sql/*" -type d | grep -v ".terragrunt-cache" | grep -E "live/.*/cloud-sql/[^/]+$" || true)
+            elif [ "${{ inputs.resource_type }}" == "project-iam-bindings" ]; then
+              # For project-level IAM bindings, find iam-bindings directories not under compute
+              ALL_RESOURCES=$(find live/dev-account -name "iam-bindings" -type d | grep -v ".terragrunt-cache" | grep -v "/compute/" || true)
+            elif [ "${{ inputs.resource_type }}" == "instance-iam-bindings" ]; then
+              # For instance-level IAM bindings, find iam-bindings directories under compute
+              ALL_RESOURCES=$(find live/dev-account -path "*/compute/*/iam-bindings" -type d | grep -v ".terragrunt-cache" || true)
+            else
+              ALL_RESOURCES=$(find live/dev-account -name "${{ inputs.resource_type }}" -type d | grep -v ".terragrunt-cache" || true)
+            fi
+
+            if [ -n "$ALL_RESOURCES" ]; then
+              CHANGED_RESOURCES=$(echo -e "$CHANGED_RESOURCES\n$ALL_RESOURCES" | sort -u | grep -v "^$" || true)
+            fi
+          fi
+
+          echo "Changed ${{ inputs.resource_type }} configurations:"
+          echo "$CHANGED_RESOURCES"
+
+          # Always filter out example resources first
+          echo "🧹 Filtering out example resources..."
+          FILTERED_CHANGED_RESOURCES=""
+
+          for resource in $CHANGED_RESOURCES; do
+            if [ -n "$resource" ]; then
+              # Extract the final folder name from the resource path
+              FINAL_FOLDER_NAME=$(basename "$resource")
+
+              # Check if this is an example resource (folder name starts with "example-")
+              if [[ "$FINAL_FOLDER_NAME" =~ ^example- ]]; then
+                echo "  🚫 Excluding example resource: $resource (folder: $FINAL_FOLDER_NAME)"
+              else
+                echo "  ✅ Including resource: $resource"
+                if [ -n "$FILTERED_CHANGED_RESOURCES" ]; then
+                  FILTERED_CHANGED_RESOURCES="$FILTERED_CHANGED_RESOURCES"$'\n'"$resource"
+                else
+                  FILTERED_CHANGED_RESOURCES="$resource"
+                fi
+              fi
+            fi
+          done
+
+          CHANGED_RESOURCES="$FILTERED_CHANGED_RESOURCES"
+          echo "Resources after filtering out example resources:"
+          echo "$CHANGED_RESOURCES"
+
+          # Filter out excluded (deleted) resources if any exist
+          EXCLUDED_RESOURCES='${{ inputs.excluded_resources }}'
+          echo "Excluded resources: $EXCLUDED_RESOURCES"
+
+          if [ "$EXCLUDED_RESOURCES" != "[]" ] && [ -n "$EXCLUDED_RESOURCES" ]; then
+            echo "🗑️  Filtering out excluded (deleted) resources..."
+            FILTERED_CHANGED_RESOURCES=""
+
+            # Parse excluded resources from JSON array
+            EXCLUDED_LIST=$(echo "$EXCLUDED_RESOURCES" | jq -r '.[]' 2>/dev/null || echo "")
+
+            # Filter CHANGED_RESOURCES to exclude deleted ones
+            for resource in $CHANGED_RESOURCES; do
+              if [ -n "$resource" ]; then
+                SHOULD_EXCLUDE=false
+
+                # Check against excluded (deleted) resources list
+                for excluded in $EXCLUDED_LIST; do
+                  if [ "$resource" = "$excluded" ]; then
+                    echo "  ⏸️ Excluding deleted resource: $resource"
+                    SHOULD_EXCLUDE=true
+                    break
+                  fi
+                done
+
+                if [ "$SHOULD_EXCLUDE" = false ]; then
+                  echo "  ✅ Including resource: $resource"
+                  if [ -n "$FILTERED_CHANGED_RESOURCES" ]; then
+                    FILTERED_CHANGED_RESOURCES="$FILTERED_CHANGED_RESOURCES"$'\n'"$resource"
+                  else
+                    FILTERED_CHANGED_RESOURCES="$resource"
+                  fi
+                fi
+              fi
+            done
+
+            CHANGED_RESOURCES="$FILTERED_CHANGED_RESOURCES"
+            echo "Resources after filtering out deletions:"
+            echo "$CHANGED_RESOURCES"
+          fi
+
+          # Convert to JSON array for output
+          if [ -n "$CHANGED_RESOURCES" ] && [ "$CHANGED_RESOURCES" != "" ]; then
+            echo "Converting resources to JSON array..."
+            echo "Raw resources:"
+            echo "$CHANGED_RESOURCES"
+
+            # Use a more robust approach to create JSON array
+            # Create temporary file to handle multiline strings properly
+            TEMP_FILE=$(mktemp)
+            echo "$CHANGED_RESOURCES" > "$TEMP_FILE"
+
+            # Filter out empty lines, sort, and create JSON array
+            RESOURCES_JSON="[]"
+            if [ -s "$TEMP_FILE" ]; then
+              # Process each line individually to avoid formatting issues
+              FILTERED_RESOURCES=$(cat "$TEMP_FILE" | grep -v "^$" | sort -u)
+              if [ -n "$FILTERED_RESOURCES" ]; then
+                # Create JSON array using printf and jq to ensure proper formatting
+                RESOURCES_JSON=$(printf '%s\n' "$FILTERED_RESOURCES" | jq -R . | jq -s -c .)
+                echo "has-changes=true" >> $GITHUB_OUTPUT
+              else
+                echo "has-changes=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "has-changes=false" >> $GITHUB_OUTPUT
+            fi
+
+            rm -f "$TEMP_FILE"
+            echo "Final JSON array: $RESOURCES_JSON"
+          else
+            RESOURCES_JSON="[]"
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "No resources found, using empty array"
+          fi
+
+          # Validate JSON before outputting
+          echo "Validating JSON: $RESOURCES_JSON"
+          if echo "$RESOURCES_JSON" | jq . >/dev/null 2>&1; then
+            echo "✅ Valid JSON array created"
+            echo "resources=$RESOURCES_JSON" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Invalid JSON detected: $RESOURCES_JSON"
+            echo "Using empty array as fallback"
+            echo "resources=[]" >> $GITHUB_OUTPUT
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          fi
+
+  execute-operation:
+    name: "${{ inputs.resource_emoji }} ${{ inputs.mode == 'validate' && 'Validate' || 'Apply' }}: ${{ matrix.resource }}"
+    runs-on: ubuntu-latest
+    needs: [get-env, detect-changes]
+    env:
+      TERRAGRUNT_VERSION: ${{ needs.get-env.outputs.terragrunt_version }}
+      TOFU_VERSION: ${{ needs.get-env.outputs.tofu_version }}
+      GCP_PROJECT_ID: ${{ needs.get-env.outputs.gcp_project_id }}
+      GCP_REGION: ${{ needs.get-env.outputs.gcp_region }}
+      TG_EXPERIMENT_MODE: ${{ needs.get-env.outputs.tg_experiment_mode }}
+      TG_NON_INTERACTIVE: ${{ needs.get-env.outputs.tg_non_interactive }}
+      TG_BACKEND_BOOTSTRAP: ${{ needs.get-env.outputs.tg_backend_bootstrap }}
+    if: |
+      always() &&
+      needs.detect-changes.outputs.has-changes == 'true'
+    strategy:
+      matrix:
+        resource: ${{ fromJson(needs.detect-changes.outputs.resources) }}
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract resource short name
+        id: extract-name
+        run: |
+          # Extract short name from resource path - always use last directory name
+          resource_path="${{ matrix.resource }}"
+          short_name=$(basename "$resource_path")
+
+          echo "short_name=$short_name" >> $GITHUB_OUTPUT
+          echo "Resource short name: $short_name"
+          echo "Full resource path: $resource_path"
+
+      - name: Cache Terragrunt and OpenTofu binaries
+        id: cache-binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/terragrunt
+            ~/.local/bin/tofu
+          key: terragrunt-${{ env.TERRAGRUNT_VERSION }}-tofu-${{ env.TOFU_VERSION }}-${{ runner.os }}
+          restore-keys: |
+            terragrunt-${{ env.TERRAGRUNT_VERSION }}-tofu-${{ env.TOFU_VERSION }}-
+            terragrunt-${{ env.TERRAGRUNT_VERSION }}-
+
+      - name: Setup Terragrunt and OpenTofu
+        if: steps.cache-binaries.outputs.cache-hit != 'true'
+        run: |
+          # Create local bin directory
+          mkdir -p ~/.local/bin
+
+          # Install Terragrunt
+          echo "📥 Downloading Terragrunt v${{ env.TERRAGRUNT_VERSION }}..."
+          wget -O ~/.local/bin/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v${{ env.TERRAGRUNT_VERSION }}/terragrunt_linux_amd64
+          chmod +x ~/.local/bin/terragrunt
+
+          # Install OpenTofu
+          echo "📥 Downloading OpenTofu v${{ env.TOFU_VERSION }}..."
+          wget -O tofu.tar.gz https://github.com/opentofu/opentofu/releases/download/v${{ env.TOFU_VERSION }}/tofu_${{ env.TOFU_VERSION }}_linux_amd64.tar.gz
+          tar -xzf tofu.tar.gz
+          chmod +x tofu
+          mv tofu ~/.local/bin/
+          rm tofu.tar.gz
+
+          echo "✅ Binaries downloaded and cached"
+
+      - name: Add binaries to PATH and verify
+        run: |
+          # Add to PATH for this job
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Verify installations
+          echo "🔍 Verifying installations..."
+          terragrunt --version
+          tofu --version
+          echo "✅ All binaries verified"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.TF_GOOGLE_CREDENTIALS }}
+
+      - name: Verify resource directory exists
+        run: |
+          echo "🔍 Verifying resource directory exists: ${{ matrix.resource }}"
+
+          if [ ! -d "${{ matrix.resource }}" ]; then
+            echo "❌ Error: Resource directory '${{ matrix.resource }}' does not exist!"
+            echo "This usually indicates that the resource was deleted but the workflow is still trying to process it."
+            echo "The workflow should have filtered out deleted resources, but this one slipped through."
+            echo ""
+            echo "Possible causes:"
+            echo "  1. The resource was recently deleted and git change detection missed it"
+            echo "  2. The excluded_resources filter is not working correctly"
+            echo "  3. There's a race condition in the workflow"
+            echo ""
+            echo "Skipping this resource to prevent workflow failure."
+            exit 1
+          fi
+
+          if [ ! -f "${{ matrix.resource }}/terragrunt.hcl" ]; then
+            echo "❌ Error: terragrunt.hcl not found in '${{ matrix.resource }}'!"
+            echo "This directory exists but doesn't contain a valid Terragrunt configuration."
+            exit 1
+          fi
+
+          echo "✅ Resource directory and configuration verified"
+
+      - name: Format HCL configuration
+        working-directory: ${{ matrix.resource }}
+        run: |
+          echo "🎨 Checking HCL formatting..."
+
+          # Format check (dry-run) using new CLI
+          terragrunt hcl fmt --check --diff
+
+          echo "✅ HCL formatting check completed"
+
+      - name: Validate HCL configuration
+        working-directory: ${{ matrix.resource }}
+        run: |
+          echo "🔍 Validating HCL configuration..."
+
+          # Validate HCL syntax using new CLI
+          terragrunt hcl validate
+
+          # Validate inputs using new CLI
+          terragrunt hcl validate --inputs
+
+          echo "✅ HCL validation completed"
+
+      - name: "${{ inputs.mode == 'validate' && 'Validate' || 'Apply' }}: ${{ matrix.resource }}"
+        id: terragrunt
+        working-directory: ${{ matrix.resource }}
+        run: |
+          echo "🚀 Working in directory: ${{ matrix.resource }}"
+
+          if [ -d ".terraform/providers" ] && [ "$(ls -A .terraform/providers 2>/dev/null)" ]; then
+            echo "📦 Local providers found"
+          else
+            echo "📥 No local providers found"
+          fi
+
+          # Initialize Terragrunt using new CLI
+          echo "🔧 Initializing Terragrunt..."
+          terragrunt run init
+
+          # Prepare plan file name
+          export PLAN_TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          export PLAN_SHORT_NAME=$(basename "$PWD")
+          export PLAN_FILE_NAME="${PLAN_TIMESTAMP}-${{ inputs.resource_type }}-${PLAN_SHORT_NAME}.plan"
+
+          echo "Plan file name: $PLAN_FILE_NAME"
+
+          if [ "${{ inputs.mode }}" == "apply" ]; then
+            # Apply the configuration using new CLI
+            set +e
+            echo "🚀 Running Terragrunt apply..."
+            terragrunt run apply -- -auto-approve
+            APPLY_EXIT_CODE=$?
+            set -e
+
+            if [ $APPLY_EXIT_CODE -eq 0 ]; then
+              echo "✅ Terragrunt apply completed successfully"
+              echo "result=success" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Terragrunt apply failed with exit code: $APPLY_EXIT_CODE"
+              echo "result=error" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            # Plan the configuration for validation and capture output using new CLI
+            set +e
+            echo "🔧 Running Terragrunt plan with detailed output..."
+            # Use PIPESTATUS to capture the exit code of terragrunt
+            terragrunt run plan -- -detailed-exitcode -compact-warnings -no-color | tee "$PLAN_FILE_NAME"
+            PLAN_EXIT_CODE=${PIPESTATUS[0]}
+            TEE_EXIT_CODE=${PIPESTATUS[1]}
+            set -e
+            echo "Terragrunt plan exit code: $PLAN_EXIT_CODE"
+            echo "Tee exit code: $TEE_EXIT_CODE"
+            echo "Full pipeline status: ${PIPESTATUS[@]}"
+            echo "Plan output file size: $(wc -l < "$PLAN_FILE_NAME" 2>/dev/null || echo 0) lines"
+            head -10 "$PLAN_FILE_NAME" || echo "Could not read plan output"
+            tail -10 "$PLAN_FILE_NAME" || echo "Could not read plan output"
+            # Create a sanitized plan output for PR comments (remove sensitive info)
+            if [ -f "$PLAN_FILE_NAME" ]; then
+              grep -E "(Plan:|No changes|Error:|Warning:|\+|\-|~|will be)" "$PLAN_FILE_NAME" | head -50 > plan_summary.txt || echo "Plan output processing failed" > plan_summary.txt
+            fi
+            if [ $PLAN_EXIT_CODE -eq 0 ]; then
+              echo "result=no-changes" >> $GITHUB_OUTPUT
+              echo "plan-summary=No changes detected" >> $GITHUB_OUTPUT
+              echo "✅ No changes detected"
+            elif [ $PLAN_EXIT_CODE -eq 2 ]; then
+              echo "result=changes-detected" >> $GITHUB_OUTPUT
+              if [ -f plan_summary.txt ]; then
+                PLAN_SUMMARY=$(cat plan_summary.txt | sed ':a;N;$!ba;s/\n/\\n/g' | head -c 1000)
+                echo "plan-summary=$PLAN_SUMMARY" >> $GITHUB_OUTPUT
+              else
+                echo "plan-summary=Changes detected (plan summary unavailable)" >> $GITHUB_OUTPUT
+              fi
+              echo "✅ Changes detected (this is expected for validation)"
+            else
+              echo "result=error" >> $GITHUB_OUTPUT
+              echo "plan-summary=Plan failed with exit code $PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+              echo "❌ Terragrunt plan failed with exit code: $PLAN_EXIT_CODE"
+              exit 1
+            fi
+          fi
+
+  update-pr-comment:
+    name: 📝 Update PR Comment
+    runs-on: ubuntu-latest
+    needs: [get-env, detect-changes, execute-operation]
+    if: github.event_name == 'pull_request' && inputs.mode == 'validate'
+    steps:
+      - name: Generate PR comment
+        id: comment
+        run: |
+          CHANGED_RESOURCES='${{ needs.detect-changes.outputs.resources }}'
+          EXECUTE_STATUS="${{ needs.execute-operation.result }}"
+          RESOURCE_SHORT_NAME='${{ inputs.resource_type }}'
+
+          if [ "$CHANGED_RESOURCES" == "[]" ]; then
+            COMMENT_BODY="${{ inputs.resource_emoji }} **$RESOURCE_SHORT_NAME**: No changes detected"
+          else
+            # Build simple comment
+            {
+              echo "${{ inputs.resource_emoji }} **$RESOURCE_SHORT_NAME Validation Results**"
+              echo ""
+
+              # Determine overall status based on job completion
+              if [ "$EXECUTE_STATUS" == "success" ]; then
+                echo "🟢 **Status: VALIDATION PASSED** ✅"
+              else
+                echo "🔴 **Status: VALIDATION FAILED** ❌"
+              fi
+              echo ""
+
+              # Count total resources
+              RESOURCE_COUNT=$(echo "$CHANGED_RESOURCES" | jq -r '. | length')
+
+              echo "**Resources Validated:** $RESOURCE_COUNT"
+              echo "**Resource Type:** $RESOURCE_SHORT_NAME"
+              if [ "${{ inputs.mode }}" == "apply" ]; then
+                echo "**Operation:** Apply (resources were deployed)"
+              else
+                echo "**Operation:** Validate (dry-run planning)"
+              fi
+              echo "**Commit:** \`${{ github.sha }}\`"
+              echo "**Workflow:** [View Full Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+              echo ""
+
+              # Commands Status Section
+              if [ "$EXECUTE_STATUS" == "success" ]; then
+                echo "### Commands Status:"
+                echo "- \`terragrunt hcl fmt --check\` ✅"
+                echo "- \`terragrunt hcl validate\` ✅"
+                echo "- \`terragrunt hcl validate --inputs\` ✅"
+                echo "- \`terragrunt run init\` ✅"
+                if [ "${{ inputs.mode }}" == "apply" ]; then
+                  echo "- \`terragrunt run apply\` ✅"
+                else
+                  echo "- \`terragrunt run plan\` ✅"
+                fi
+              else
+                echo "### Commands Status:"
+                echo "- \`terragrunt hcl fmt --check\` ❓"
+                echo "- \`terragrunt hcl validate\` ❓"
+                echo "- \`terragrunt hcl validate --inputs\` ❓"
+                echo "- \`terragrunt run init\` ❓"
+                if [ "${{ inputs.mode }}" == "apply" ]; then
+                  echo "- \`terragrunt run apply\` ❌"
+                else
+                  echo "- \`terragrunt run plan\` ❌"
+                fi
+              fi
+              echo ""
+
+              # Resource Details Table
+              echo "### 📋 Resource Validation Details"
+              echo ""
+              echo "| Resource Path | Status | Plan Summary | Workflow |"
+              echo "|---------------|--------|--------------|-----------|"
+
+              # Show each resource with detailed status
+              echo "$CHANGED_RESOURCES" | jq -r '.[]' | while read -r resource; do
+                if [ -n "$resource" ]; then
+                  # Determine individual resource status
+                  if [ "$EXECUTE_STATUS" == "success" ]; then
+                    RESOURCE_STATUS_ICON="✅"
+                    RESOURCE_STATUS_TEXT="Passed"
+
+                    # Get plan summary based on resource type
+                    case "${{ inputs.resource_type }}" in
+                      "folder")
+                        PLAN_SUMMARY="📁 Folder structure validated"
+                        ;;
+                      "project")
+                        PLAN_SUMMARY="📦 GCP project configuration validated"
+                        ;;
+                      "vpc-network")
+                        PLAN_SUMMARY="🌐 VPC network configuration validated"
+                        ;;
+                      "external-ip")
+                        PLAN_SUMMARY="🌍 External IP configuration validated"
+                        ;;
+                      "instance-template")
+                        PLAN_SUMMARY="🚀 Instance template applied successfully"
+                        ;;
+                      "compute")
+                        PLAN_SUMMARY="💻 Compute instance configuration validated"
+                        ;;
+                      "private-service-access")
+                        PLAN_SUMMARY="🔗 Private service access validated"
+                        ;;
+                      "secrets")
+                        PLAN_SUMMARY="🔐 Secret configuration validated"
+                        ;;
+                      *)
+                        PLAN_SUMMARY="📋 Configuration validated"
+                        ;;
+                    esac
+                  else
+                    RESOURCE_STATUS_ICON="❌"
+                    RESOURCE_STATUS_TEXT="Failed"
+                    PLAN_SUMMARY="⚠️ Validation failed - check logs"
+                  fi
+
+                  # Create workflow links
+                  WORKFLOW_LINK="[Plan Output](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+                  # Truncate long resource paths for better display
+                  DISPLAY_RESOURCE="$resource"
+                  if [ ${#DISPLAY_RESOURCE} -gt 50 ]; then
+                    DISPLAY_RESOURCE="...${DISPLAY_RESOURCE: -47}"
+                  fi
+
+                  echo "| $DISPLAY_RESOURCE | $RESOURCE_STATUS_ICON $RESOURCE_STATUS_TEXT | $PLAN_SUMMARY | $WORKFLOW_LINK |"
+                fi
+              done
+
+              # Results Section
+              echo ""
+              if [ "$EXECUTE_STATUS" == "success" ]; then
+                if [ "${{ inputs.mode }}" == "apply" ]; then
+                  echo "### 🚀 Deployment Results:"
+                  echo "- **Infrastructure updated** successfully"
+                  echo "- **All deployment steps** completed"
+                  echo "- **Deployment logs** available in workflow run"
+                else
+                  echo "### ✅ Validation Results:"
+                  echo "- All $RESOURCE_SHORT_NAME configurations passed validation"
+                  echo "- Terragrunt initialization completed successfully"
+                  echo "- Terraform syntax and dependency validation passed"
+                  echo "- Terraform plan executed without errors"
+                fi
+              else
+                echo "### ❌ Validation Failures:"
+                echo "- One or more $RESOURCE_SHORT_NAME configurations failed validation"
+                echo "- Check the workflow logs for detailed error information"
+                echo "- Common issues: syntax errors, missing dependencies, or configuration conflicts"
+              fi
+
+              echo ""
+              echo "### 📋 Next Steps:"
+              if [ "$EXECUTE_STATUS" == "success" ]; then
+                if [ "${{ inputs.mode }}" == "apply" ]; then
+                  echo "- ✅ Resources have been successfully deployed"
+                  echo "- 🔍 Verify the deployed resources in the GCP console"
+                  echo "- 📋 Review the deployment logs for detailed information"
+                else
+                  echo "- ✅ All validations passed - ready for review and merge"
+                  echo "- 🔀 Merge this PR to trigger automatic deployment"
+                  echo "- 📋 Review the planned changes in the workflow logs"
+                fi
+              else
+                echo "- ❌ Fix the validation errors before proceeding"
+                echo "- 🔍 Check the workflow logs for specific error details"
+                echo "- 🔄 Push new commits to re-trigger validation"
+              fi
+
+              echo ""
+              echo "**📋 Workflow Logs:** Plan output files are available in the workflow run for detailed review."
+            } > /tmp/comment_body.txt
+
+            # Read the comment body from file
+            COMMENT_BODY=$(cat /tmp/comment_body.txt)
+            rm -f /tmp/comment_body.txt
+          fi
+
+          # Use a more robust method to set the output
+          {
+            echo "comment-body<<COMMENT_EOF"
+            echo "$COMMENT_BODY"
+            echo "COMMENT_EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Read comment body from environment variable to avoid template literal issues
+            const commentBody = process.env.COMMENT_BODY;
+
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment => {
+              const isBot = comment.user.type === 'Bot';
+              const containsResource = comment.body.includes('${{ inputs.resource_type }}');
+              return isBot && containsResource;
+            });
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+        env:
+          COMMENT_BODY: ${{ steps.comment.outputs.comment-body }}
+
+  orchestration-gate:
+    name: ⛩️ Merge Gate
+    runs-on: ubuntu-latest
+    needs: [get-env, detect-changes, execute-operation]
+    if: always()
+    outputs:
+      overall-status: ${{ steps.gate.outputs.status }}
+    steps:
+      - name: Determine overall status
+        id: gate
+        run: |
+          DETECT_STATUS="${{ needs.detect-changes.result }}"
+          EXECUTE_STATUS="${{ needs.execute-operation.result }}"
+          HAS_CHANGES="${{ needs.detect-changes.outputs.has-changes }}"
+          RESOURCE_SHORT_NAME='${{ inputs.resource_type }}'
+
+          echo "Detect changes status: $DETECT_STATUS"
+          echo "Execute operation status: $EXECUTE_STATUS"
+          echo "Has changes: $HAS_CHANGES"
+
+          if [ "$DETECT_STATUS" != "success" ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "❌ Failed to detect changes"
+            exit 1
+          fi
+
+          if [ "$HAS_CHANGES" == "false" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ No changes detected for $RESOURCE_SHORT_NAME"
+            exit 0
+          fi
+
+          # Check if the execute-operation job completed successfully
+          if [ "$EXECUTE_STATUS" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ $RESOURCE_SHORT_NAME operation completed successfully"
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "❌ $RESOURCE_SHORT_NAME operation failed with status: $EXECUTE_STATUS"
+            exit 1
+          fi
+
+  aggregate-results:
+    name: 📊 Aggregate Results
+    runs-on: ubuntu-latest
+    needs: [get-env, execute-operation]
+    if: always()
+    steps:
+      - name: Check execution status
+        run: |
+          echo "Matrix execution completed"
+          echo "Individual job results are available in execute-operation job logs"

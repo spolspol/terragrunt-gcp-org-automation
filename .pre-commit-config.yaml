@@ -1,0 +1,90 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+repos:
+  # Terragrunt hooks
+  - repo: local
+    hooks:
+      - id: terragrunt-hcl-fmt
+        name: Terragrunt HCL Format
+        description: Run terragrunt hcl format on all HCL files
+        entry: terragrunt
+        args: [hcl, format]
+        language: system
+        files: \.hcl$
+        pass_filenames: false
+        always_run: false
+
+      - id: terragrunt-hcl-fmt-check
+        name: Terragrunt HCL Format Check
+        description: Check if HCL files are properly formatted
+        entry: terragrunt
+        args: [hcl, format, --check]
+        language: system
+        files: \.hcl$
+        pass_filenames: false
+        always_run: false
+
+  # General file hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: \.github/workflows/.*\.yml$ # GitHub Actions use specific YAML features
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # Security hooks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: |
+          (?x)^(
+            \.git/.*|
+            artifacts/.*\.json$|
+            docs/SECRETS_TEMPLATE\.md|
+            docs/SECRET_MANAGEMENT\.md|
+            docs/MODULE_VERSIONING\.md|
+            SECRETS_SETUP\.md|
+            live/.*/secrets/.*/terragrunt\.hcl|
+            live/.*/compute/.*/startup-script\.sh|
+            live/.*/compute/.*/terragrunt\.hcl|
+            live/.*/compute/.*/instance-template/terragrunt\.hcl|
+            _common/common\.hcl|
+            \.github/workflows/.*\.yml
+          )$
+
+  # YAML formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.0.3
+    hooks:
+      - id: prettier
+        files: \.(yaml|yml)$
+        exclude: \.github/workflows/.*\.yml$
+
+# Global configuration
+default_language_version:
+  python: python3
+
+fail_fast: false
+
+# CI configuration
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ""
+  autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

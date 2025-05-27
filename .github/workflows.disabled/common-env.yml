@@ -1,0 +1,73 @@
+name: Common Environment Variables (Reusable)
+
+on:
+  workflow_call:
+    outputs:
+      terragrunt_version:
+        description: 'Terragrunt version to use'
+        value: ${{ jobs.get-env.outputs.terragrunt_version }}
+      tofu_version:
+        description: 'OpenTofu version to use'
+        value: ${{ jobs.get-env.outputs.tofu_version }}
+      gcp_project_id:
+        description: 'GCP project ID'
+        value: ${{ jobs.get-env.outputs.gcp_project_id }}
+      gcp_region:
+        description: 'GCP region'
+        value: ${{ jobs.get-env.outputs.gcp_region }}
+      tg_experiment_mode:
+        description: 'Terragrunt experimental mode setting'
+        value: ${{ jobs.get-env.outputs.tg_experiment_mode }}
+      tg_non_interactive:
+        description: 'Terragrunt non-interactive mode setting'
+        value: ${{ jobs.get-env.outputs.tg_non_interactive }}
+      tg_backend_bootstrap:
+        description: 'Terragrunt backend bootstrap setting'
+        value: ${{ jobs.get-env.outputs.tg_backend_bootstrap }}
+
+jobs:
+  get-env:
+    name: 📋 Get ENV
+    runs-on: ubuntu-latest
+    outputs:
+      terragrunt_version: ${{ steps.env.outputs.terragrunt_version }}
+      tofu_version: ${{ steps.env.outputs.tofu_version }}
+      gcp_project_id: ${{ steps.env.outputs.gcp_project_id }}
+      gcp_region: ${{ steps.env.outputs.gcp_region }}
+      tg_experiment_mode: ${{ steps.env.outputs.tg_experiment_mode }}
+      tg_non_interactive: ${{ steps.env.outputs.tg_non_interactive }}
+      tg_backend_bootstrap: ${{ steps.env.outputs.tg_backend_bootstrap }}
+    steps:
+      - name: Set common environment variables
+        id: env
+        run: |
+          # Terragrunt configuration - use environment variables with fallback defaults
+          TERRAGRUNT_VERSION="${{ env.TERRAGRUNT_VERSION || '0.81.0' }}"
+          TOFU_VERSION="${{ env.TOFU_VERSION || '1.9.1' }}"
+
+          # GCP configuration - use environment variables with fallback defaults
+          GCP_PROJECT_ID="${{ env.GCP_PROJECT_ID || 'automation' }}"
+          GCP_REGION="${{ env.GCP_REGION || 'europe-west2' }}"
+
+          # Terragrunt operational settings - use environment variables with fallback defaults
+          TG_EXPERIMENT_MODE="${{ env.TG_EXPERIMENT_MODE || 'true' }}"
+          TG_NON_INTERACTIVE="${{ env.TG_NON_INTERACTIVE || 'true' }}"
+          TG_BACKEND_BOOTSTRAP="${{ env.TG_BACKEND_BOOTSTRAP || 'true' }}"
+
+          # Set outputs
+          echo "terragrunt_version=$TERRAGRUNT_VERSION" >> $GITHUB_OUTPUT
+          echo "tofu_version=$TOFU_VERSION" >> $GITHUB_OUTPUT
+          echo "gcp_project_id=$GCP_PROJECT_ID" >> $GITHUB_OUTPUT
+          echo "gcp_region=$GCP_REGION" >> $GITHUB_OUTPUT
+          echo "tg_experiment_mode=$TG_EXPERIMENT_MODE" >> $GITHUB_OUTPUT
+          echo "tg_non_interactive=$TG_NON_INTERACTIVE" >> $GITHUB_OUTPUT
+          echo "tg_backend_bootstrap=$TG_BACKEND_BOOTSTRAP" >> $GITHUB_OUTPUT
+
+          echo "✅ Common environment variables set:"
+          echo "  TERRAGRUNT_VERSION: $TERRAGRUNT_VERSION"
+          echo "  TOFU_VERSION: $TOFU_VERSION"
+          echo "  GCP_PROJECT_ID: $GCP_PROJECT_ID"
+          echo "  GCP_REGION: $GCP_REGION"
+          echo "  TG_EXPERIMENT_MODE: $TG_EXPERIMENT_MODE"
+          echo "  TG_NON_INTERACTIVE: $TG_NON_INTERACTIVE"
+          echo "  TG_BACKEND_BOOTSTRAP: $TG_BACKEND_BOOTSTRAP"
