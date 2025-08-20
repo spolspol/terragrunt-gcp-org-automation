@@ -1,11 +1,11 @@
 # Common compute configuration for all VMs in this region
 
 locals {
-  # Common dependencies that all compute instances need
+  # Common dependencies using Terragrunt directory functions
   common_dependencies = {
-    vpc_network_path = "../../../vpc-network"
-    project_path     = "../../../project"
-    secrets_path     = "../../../secrets"
+    vpc_network_path = "${dirname(dirname(get_terragrunt_dir()))}/vpc-network"
+    project_path     = find_in_parent_folders("project")
+    secrets_path     = "${dirname(dirname(get_terragrunt_dir()))}/secrets"
   }
 
   # Common mock outputs for dependencies
@@ -17,8 +17,8 @@ locals {
     }
     project = {
       # Core project outputs from terraform-google-project-factory
-      project_id     = "org-test-dev"
-      project_name   = "org-test-dev"
+      project_id     = "dev-01"
+      project_name   = "dev-01"
       project_number = "123456789012"
       domain         = "example.com"
 
@@ -58,7 +58,7 @@ locals {
       available_zones = ["europe-west2-a", "europe-west2-b", "europe-west2-c"]
     }
     secrets = {
-      secret_names = ["example-secret", "api-key-secret", "db-connection-secret"]
+      secret_names = ["sql-server-admin-password", "sql-server-dba-password"]
     }
   }
 
