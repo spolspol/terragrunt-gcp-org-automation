@@ -1,5 +1,5 @@
-# NAT Gateway External IP Configuration
-# This reserves an external IP address for the NAT gateway
+# SQL Server External IP Configuration
+# This reserves an external IP address for SQL Server access
 
 include "root" {
   path = find_in_parent_folders("root.hcl")
@@ -46,12 +46,27 @@ locals {
 
   # Extract resource name from directory path
   resource_name = basename(get_terragrunt_dir())
+  
+  # Dynamic path construction for dependencies
+  project_base_path = dirname(dirname(dirname(get_terragrunt_dir())))
+  vpc_network_path = "${local.project_base_path}/vpc-network"
 }
 
 dependency "project" {
   config_path = find_in_parent_folders("project")
   mock_outputs = {
-    project_id = "mock-project-id"
+    project_id   = "mock-project-id"
+    project_name = "mock-project"
+  }
+  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
+  skip_outputs                            = false
+}
+
+dependency "vpc-network" {
+  config_path = local.vpc_network_path
+  mock_outputs = {
+    network_name      = "mock-network"
+    network_self_link = "projects/mock-project/global/networks/mock-network"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
   skip_outputs                            = false
@@ -65,7 +80,7 @@ inputs = merge(
     region     = local.merged_vars.region
     
     # External IP names - can reserve multiple IPs
-    names = ["${local.merged_vars.project_name}-${local.resource_name}"]
+    names = ["${dependency.project.outputs.project_name}-${local.resource_name}"]
     
     # External IP specific configuration
     address_type = "EXTERNAL"
@@ -74,18 +89,20 @@ inputs = merge(
     network_tier = "PREMIUM"
     
     # Description
-    description = "External IP for NAT Gateway in ${local.merged_vars.environment} environment"
+    description = "External IP for SQL Server ${local.resource_name} in ${local.merged_vars.environment} environment"
     
     # Labels
     labels = merge(
       {
-        managed_by  = "terragrunt"
-        component   = "networking"
-        type        = "nat-gateway"
-        environment = local.merged_vars.environment
+        managed_by   = "terragrunt"
+        component    = "compute"
+        type         = "sql-server"
+        purpose      = "database"
+        environment  = local.merged_vars.environment
       },
       try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {})
+      try(local.merged_vars.env_labels, {}),
+      try(local.merged_vars.project_labels, {})
     )
   }
 )

@@ -25,8 +25,8 @@ include "common" {
   path = "${get_repo_root()}/_common/common.hcl"
 }
 
-include "address_template" {
-  path = "${get_repo_root()}/_common/templates/address.hcl"
+include "external_ip_template" {
+  path = "${get_repo_root()}/_common/templates/external_ip.hcl"
 }
 
 locals {
@@ -57,26 +57,36 @@ dependency "project" {
   skip_outputs                            = false
 }
 
-inputs = {
-  project_id = dependency.project.outputs.project_id
-  region     = local.merged_vars.region
-  
-  # IP address configuration
-  address_name        = "${local.merged_vars.project_name}-${local.resource_name}"
-  address_type        = "EXTERNAL"
-  address_tier        = "PREMIUM"
-  address_description = "External IP for GKE cluster ingress services in ${local.merged_vars.environment} environment"
-  
-  # Labels
-  labels = merge(
-    {
-      managed_by  = "terragrunt"
-      component   = "gke"
-      type        = "ingress"
-      cluster     = "cluster-01"
-      environment = local.merged_vars.environment
-    },
-    try(local.merged_vars.org_labels, {}),
-    try(local.merged_vars.env_labels, {})
-  )
-}
+inputs = merge(
+  read_terragrunt_config("${get_repo_root()}/_common/templates/external_ip.hcl").inputs,
+  local.merged_vars,
+  {
+    project_id = dependency.project.outputs.project_id
+    region     = local.merged_vars.region
+    
+    # External IP names - can reserve multiple IPs
+    names = ["${local.merged_vars.project_name}-${local.resource_name}"]
+    
+    # External IP specific configuration
+    address_type = "EXTERNAL"
+    global       = false # Regional IP
+    ip_version   = "IPV4"
+    network_tier = "PREMIUM"
+    
+    # Description
+    description = "External IP for GKE cluster ingress services in ${local.merged_vars.environment} environment"
+    
+    # Labels
+    labels = merge(
+      {
+        managed_by  = "terragrunt"
+        component   = "gke"
+        type        = "ingress"
+        cluster     = "cluster-01"
+        environment = local.merged_vars.environment
+      },
+      try(local.merged_vars.org_labels, {}),
+      try(local.merged_vars.env_labels, {})
+    )
+  }
+)
