@@ -23,6 +23,13 @@ The infrastructure uses a hierarchical IP allocation scheme designed to:
 
 ### Total Managed IP Space
 
+```mermaid
+pie title "IP Address Distribution (25M Total)"
+    "Development" : 4.2
+    "Perimeter" : 4.2
+    "Production" : 16.7
+```
+
 - **Development Block**: 10.128.0.0/10 (4.2M IPs)
 - **Perimeter Block**: 10.192.0.0/10 (4.2M IPs)
 - **Production Block**: 10.0.0.0/8 (16.7M IPs)
@@ -32,18 +39,44 @@ The infrastructure uses a hierarchical IP allocation scheme designed to:
 
 ### Hierarchical Structure
 
-```
-Organization (10.0.0.0/8 + 10.128.0.0/10)
-├── Development (10.128.0.0/10)
-│   ├── dev-01 (10.132.0.0/16)
-│   ├── dev-02 (10.133.0.0/16)
-│   └── ... (up to 64 environments)
-├── Perimeter (10.192.0.0/10)
-│   ├── data-staging (10.196.0.0/16)
-│   └── dns-infra (10.197.0.0/16)
-└── Production (10.0.0.0/8)
-    ├── prod-01 (10.4.0.0/16)
-    └── prod-02 (10.5.0.0/16)
+```mermaid
+flowchart TB
+    subgraph "IP Allocation Hierarchy"
+        ORG["🏢 Organization<br/>25M IPs Total"]
+        
+        subgraph BLOCKS["Major Blocks"]
+            DEV["📘 Development<br/>10.128.0.0/10<br/>4.2M IPs"]
+            PERIM["🔒 Perimeter<br/>10.192.0.0/10<br/>4.2M IPs"]
+            PROD["🚀 Production<br/>10.0.0.0/8<br/>16.7M IPs"]
+        end
+        
+        subgraph ENVS["Environments (/16 each)"]
+            DEV01["dev-01<br/>10.132.0.0/16<br/>65,536 IPs"]
+            DEV02["dev-02<br/>10.133.0.0/16<br/>Reserved"]
+            MORE["...64 total"]
+        end
+        
+        subgraph SUBNETS["Subnet Types"]
+            DMZ["DMZ /21<br/>2,048 IPs"]
+            PRIV["Private /21<br/>2,048 IPs"]
+            PUB["Public /21<br/>2,048 IPs"]
+            GKE["GKE /18<br/>16,384 IPs"]
+        end
+    end
+    
+    ORG --> BLOCKS
+    DEV --> ENVS
+    DEV01 --> SUBNETS
+    
+    classDef org fill:#E1F5FE,stroke:#01579B,stroke-width:3px
+    classDef block fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    classDef env fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px
+    classDef subnet fill:#FFF3E0,stroke:#FF9800,stroke-width:1px
+    
+    class ORG org
+    class BLOCKS,DEV,PERIM,PROD block
+    class ENVS,DEV01,DEV02,MORE env
+    class SUBNETS,DMZ,PRIV,PUB,GKE subnet
 ```
 
 ### Per-Environment Allocation
@@ -71,14 +104,55 @@ Each GKE cluster requires secondary ranges for pods and services:
 
 ### Development Block Details
 
+```mermaid
+flowchart LR
+    subgraph "Development Block (10.128.0.0/10)"
+        subgraph ACTIVE["Active Environments"]
+            DEV01["dev-01<br/>10.132.0.0/16<br/>✅ Deployed"]
+        end
+        
+        subgraph RESERVED["Reserved"]
+            DEV02["dev-02<br/>10.133.0.0/16"]
+            DEV03["dev-03<br/>10.134.0.0/16"]
+            DEV04["dev-04<br/>10.135.0.0/16"]
+        end
+        
+        subgraph AVAILABLE["Available"]
+            AVAIL["60 Environments<br/>10.136.0.0 - 10.191.0.0"]
+        end
+    end
+    
+    classDef active fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
+    classDef reserved fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
+    classDef available fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    
+    class ACTIVE,DEV01 active
+    class RESERVED,DEV02,DEV03,DEV04 reserved
+    class AVAILABLE,AVAIL available
+```
+
 **Block**: 10.128.0.0/10  
 **Range**: 10.128.0.0 - 10.191.255.255  
 **Capacity**: 64 environments × 65,536 IPs
 
-#### Active Environments
+#### Active Environment: dev-01
+
+```mermaid
+sankey-beta
+
+%% dev-01 IP Allocation (10.132.0.0/16)
+dev-01,DMZ,2048
+dev-01,Private,2048
+dev-01,Public,2048
+dev-01,GKE-Primary,16384
+dev-01,GKE-Pods,2048
+dev-01,GKE-Services,256
+dev-01,Reserved,8960
+dev-01,Available,31744
+```
 
 **dev-01**: 10.132.0.0/16
-- Status: Active
+- Status: ✅ Active
 - Utilization: 51.6% (33,792 IPs allocated)
 - Available: 48.4% (31,744 IPs)
 
@@ -111,6 +185,32 @@ Secondary Ranges:
 ## CIDR Alignment Rules
 
 ### Critical Alignment Requirements
+
+```mermaid
+flowchart TB
+    subgraph "CIDR Boundary Alignment Rules"
+        subgraph "/21 Blocks"
+            A21["Third octet ÷ 8 = integer<br/>✅ 10.132.0.0/21<br/>✅ 10.132.8.0/21<br/>❌ 10.132.4.0/21"]
+        end
+        
+        subgraph "/18 Blocks"
+            A18["Third octet ÷ 64 = integer<br/>✅ 10.132.64.0/18<br/>✅ 10.132.128.0/18<br/>❌ 10.132.32.0/18"]
+        end
+        
+        subgraph "/19 Blocks"
+            A19["Third octet ÷ 32 = integer<br/>✅ 10.132.32.0/19<br/>✅ 10.132.160.0/19<br/>❌ 10.132.48.0/19"]
+        end
+        
+        subgraph "/24 Blocks"
+            A24["Always aligned<br/>✅ Any x.x.x.0/24"]
+        end
+    end
+    
+    classDef valid fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
+    classDef rules fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    
+    class A21,A18,A19,A24 rules
+```
 
 Proper CIDR alignment is essential for valid network configuration:
 
@@ -162,6 +262,36 @@ development:
 
 #### IP Allocation Checker
 
+```mermaid
+flowchart LR
+    subgraph "IP Allocation Management Tools"
+        subgraph COMMANDS["Available Commands"]
+            VALIDATE["validate<br/>Check conflicts"]
+            VISUALIZE["visualize<br/>Show allocations"]
+            AVAILABLE["available<br/>List free blocks"]
+            NEXT["next<br/>Suggest allocation"]
+        end
+        
+        subgraph OUTPUTS["Output Types"]
+            REPORT["Validation Report"]
+            DIAGRAM["Visual Map"]
+            LIST["Available Ranges"]
+            SUGGEST["Next Assignment"]
+        end
+    end
+    
+    VALIDATE --> REPORT
+    VISUALIZE --> DIAGRAM
+    AVAILABLE --> LIST
+    NEXT --> SUGGEST
+    
+    classDef command fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    classDef output fill:#FFF3E0,stroke:#FF9800,stroke-width:2px
+    
+    class COMMANDS,VALIDATE,VISUALIZE,AVAILABLE,NEXT command
+    class OUTPUTS,REPORT,DIAGRAM,LIST,SUGGEST output
+```
+
 The `scripts/ip-allocation-checker.py` tool provides:
 
 ```bash
@@ -202,6 +332,37 @@ To manually verify an allocation:
 ## Future Planning
 
 ### Capacity Planning
+
+```mermaid
+flowchart TB
+    subgraph "Environment Capacity"
+        subgraph DEV["Development"]
+            DACT["Active: 1"]
+            DRES["Reserved: 3"]
+            DAVL["Available: 60"]
+        end
+        
+        subgraph PERIM["Perimeter"]
+            PACT["Active: 0"]
+            PRES["Reserved: 2"]
+            PAVL["Available: 62"]
+        end
+        
+        subgraph PROD["Production"]
+            PRACT["Active: 0"]
+            PRRES["Reserved: 2"]
+            PRAVL["Available: 254"]
+        end
+    end
+    
+    classDef active fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
+    classDef reserved fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
+    classDef available fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    
+    class DACT,PACT,PRACT active
+    class DRES,PRES,PRRES reserved
+    class DAVL,PAVL,PRAVL available
+```
 
 Current capacity and growth potential:
 
@@ -250,13 +411,23 @@ External IPs:     {project}-{resource}-{purpose}
 
 ### Change Process
 
-1. Identify requirement
-2. Check available ranges
-3. Update ip-allocation.yaml
-4. Run validation script
-5. Update Terragrunt configurations
-6. Apply changes
-7. Document in changelog
+```mermaid
+flowchart LR
+    subgraph "IP Allocation Change Process"
+        REQ["1️⃣ Identify<br/>Requirement"]
+        CHECK["2️⃣ Check<br/>Available"]
+        UPDATE["3️⃣ Update<br/>YAML"]
+        VALIDATE["4️⃣ Run<br/>Validation"]
+        CONFIG["5️⃣ Update<br/>Terragrunt"]
+        APPLY["6️⃣ Apply<br/>Changes"]
+        DOC["7️⃣ Document<br/>Changelog"]
+    end
+    
+    REQ --> CHECK --> UPDATE --> VALIDATE --> CONFIG --> APPLY --> DOC
+    
+    classDef step fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    class REQ,CHECK,UPDATE,VALIDATE,CONFIG,APPLY,DOC step
+```
 
 ## Troubleshooting
 
@@ -287,6 +458,32 @@ External IPs:     {project}-{resource}-{purpose}
 3. Evaluate if larger initial allocation needed
 
 ## External IP Management
+
+### IP Categories
+
+```mermaid
+flowchart TB
+    subgraph "External IP Management"
+        subgraph NAT["NAT Gateway IPs"]
+            NAT1["dev-01-nat<br/>35.246.0.1"]
+        end
+        
+        subgraph CLUSTER["Cluster Service IPs"]
+            CL1["cluster-01<br/>35.246.0.123"]
+            CL2["cluster-02<br/>Reserved"]
+        end
+        
+        subgraph SQL["SQL Server IPs"]
+            SQL1["sql-server-01<br/>35.246.0.200"]
+        end
+    end
+    
+    classDef active fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
+    classDef reserved fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
+    
+    class NAT1,CL1,SQL1 active
+    class CL2 reserved
+```
 
 ### NAT Gateway IPs
 
