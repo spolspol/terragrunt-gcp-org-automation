@@ -168,8 +168,8 @@ flowchart LR
     end
     
     PRIV --> ROUTER
-    ROUTER ― GATEWAY
-    GATEWAY ― EXT_IP
+    ROUTER --> GATEWAY
+    GATEWAY --> EXT_IP
     EXT_IP <--> INTERNET
     
     classDef private fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px

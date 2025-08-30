@@ -16,7 +16,7 @@ The infrastructure implements a hierarchical architecture with:
 
 | Line Style | Meaning | Example |
 |------------|---------|---------|
-| Solid (―) | Direct dependency/ownership | VPC ― Subnet |
+| Solid (→) | Direct dependency/ownership | VPC → Subnet |
 | Dashed (-->) | Network flow with direction | VM --> NAT |
 | Dotted (..>) | Data flow | Secrets ..> Application |
 | Double (<-->) | Bidirectional communication | Client <--> Server |
@@ -63,12 +63,12 @@ graph TB
                         Router["Cloud Router<br/>BGP ASN: 64514"]
                         CloudNAT["Cloud NAT"]
                         NATExtIP["NAT External IP"]
-                        Router ― CloudNAT
-                        CloudNAT ― NATExtIP
+                        Router --> CloudNAT
+                        CloudNAT --> NATExtIP
                     end
                     
-                    VPC ― Subnets
-                    Subnets ― Router
+                    VPC --> Subnets
+                    Subnets --> Router
                 end
                 
                 %% Compute Resources
@@ -77,7 +77,7 @@ graph TB
                         GKE["GKE Cluster<br/>cluster-01"]
                         ArgoCD["ArgoCD Bootstrap"]
                         GKEExtIP["Ingress External IP"]
-                        GKE ― ArgoCD
+                        GKE --> ArgoCD
                     end
                     
                     subgraph VirtualMachines["Virtual Machines"]
@@ -169,7 +169,7 @@ flowchart LR
         CR[Cloud Router]
         CN[Cloud NAT]
         EIP[External IP]
-        CR ― CN ― EIP
+        CR --> CN --> EIP
     end
     
     PrimaryNets --> CR
@@ -203,10 +203,10 @@ flowchart TB
         end
     end
     
-    GKEC ― ARGO
+    GKEC --> ARGO
     SECS -.-> ESO
     ESO -.-> ARGO
-    EXTIP ― INGRESS
+    EXTIP --> INGRESS
     ARGO --> Applications
     
     GITHUB[GitHub Repos] -.-> ARGO
@@ -229,7 +229,7 @@ flowchart TD
                 APP_SEC[App Secrets<br/>• SSL Certs<br/>• API Keys]
                 DB_SEC[Database<br/>• Admin Password<br/>• DBA Password]
             end
-            SM ― SecretTypes
+            SM --> SecretTypes
         end
         
         subgraph AccessControl["Access Control"]
