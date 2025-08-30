@@ -33,7 +33,6 @@ This infrastructure-as-code repository implements a hierarchical configuration a
 - **Hierarchical structure** for environment/account/project organization
 - **Folder-based organization** for GCP resource hierarchy
 - **GitHub Actions** for automated CI/CD workflows
-- **Rclone** for efficient cloud-to-cloud data synchronization
 
 > **Note**: This repository uses `root.hcl` instead of `terragrunt.hcl` as the root configuration file.
 

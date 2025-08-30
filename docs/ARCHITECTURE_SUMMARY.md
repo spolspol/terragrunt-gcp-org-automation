@@ -16,8 +16,9 @@ This document outlines the architectural principles and design rationale behind 
 - **Terragrunt 0.80.2**: Configuration management and orchestration
 - **Google Cloud Platform**: Cloud infrastructure provider
 - **GitHub Actions**: CI/CD automation
+- **ArgoCD 8.1.3**: GitOps continuous delivery platform
 - **Google Secret Manager**: Secrets management
-- **Rclone v1.60.1**: Cloud-to-cloud data synchronization
+- **External Secrets Operator**: Kubernetes secrets synchronization
 
 ## Tool Selection Rationale
 
@@ -50,6 +51,27 @@ GCP was selected based on:
 3. **Managed Services**: Rich ecosystem of managed services reducing operational overhead
 4. **Cost Efficiency**: Competitive pricing with sustained use discounts
 5. **Innovation**: Access to cutting-edge services and features
+
+### Dynamic Configuration Patterns
+All configurations now use Terragrunt directory functions for path resolution:
+
+```hcl
+locals {
+  # Dynamic path construction replaces hardcoded paths
+  project_base_path = dirname(dirname(get_terragrunt_dir()))
+  secrets_base_path = "${local.project_base_path}/secrets"
+  networking_base_path = "${dirname(get_terragrunt_dir())}/networking"
+  
+  # Resource name extraction from directory structure
+  resource_name = basename(get_terragrunt_dir())
+}
+
+dependency "project" {
+  config_path = find_in_parent_folders("project")
+}
+```
+
+This pattern eliminates hardcoded relative paths and enables portable, maintainable configurations.
 
 ## Core Architectural Principles
 
@@ -122,6 +144,15 @@ preemptible = true
 - Easy promotion between environments
 
 ### 5. Security by Default
+
+Security is built into every layer:
+
+- **Network isolation**: Private subnets by default with NAT Gateway for egress
+- **Identity management**: Service accounts with least privilege
+- **Secrets management**: No hardcoded secrets, Google Secret Manager integration
+- **Encryption**: At-rest and in-transit encryption
+- **Audit logging**: Comprehensive audit trails
+- **Firewall rules**: Default deny with explicit allow rules
 
 Security is built into every layer:
 
@@ -263,11 +294,15 @@ gsutil rsync -r local-dir/ gs://bucket/path/
 The GCP organization follows a logical hierarchy:
 
 ```
-Organization (YOUR_ORG_ID)
-├── Bootstrap Folder (YOUR_BOOTSTRAP_FOLDER_ID)
-│   └── org-automation (project)
-└── DMZ Folder
-    └── data-staging (project)
+Organization (example-org.com)
+├── Bootstrap Folder
+│   └── org-automation (Infrastructure management)
+├── Development Folder
+│   └── dev-01 (Active development environment)
+├── Perimeter Folder
+│   └── Reserved for DMZ services
+└── Production Folder
+    └── Reserved for production workloads
 ```
 
 **Rationale**:
@@ -280,7 +315,11 @@ Organization (YOUR_ORG_ID)
 Projects are organized by function:
 
 - **org-automation**: Infrastructure management and CI/CD
-- **data-staging**: Data processing and integration
+- **dev-01**: Development environment with full stack
+  - VPC Network (10.132.0.0/16)
+  - GKE Cluster with ArgoCD
+  - NAT Gateway for secure egress
+  - Compute instances and databases
 - **Future projects**: Follow the same patterns
 
 **Benefits**:
@@ -319,13 +358,22 @@ project/
 ### Network Security
 
 ```
-Internet → Firewall → External IP → NAT → Private Subnet → Resources
+Internet → External IP → Cloud NAT → Cloud Router → Private Subnets → Resources
 ```
 
-- **Private by default**: Resources in private subnets
-- **Explicit ingress**: Only required ports from known IPs
-- **No public IPs**: Except for designated entry points
-- **Network segmentation**: Isolation between environments
+#### NAT Gateway Architecture
+The infrastructure implements a centralized NAT Gateway pattern:
+
+- **Cloud Router**: BGP router with ASN 64514 for dynamic routing
+- **Cloud NAT**: Managed NAT service with automatic IP allocation
+- **External IPs**: Reserved static IPs for predictable egress
+- **Firewall Rules**: Explicit egress rules for NAT-enabled resources
+
+Benefits:
+- **Cost Optimization**: Single NAT gateway vs individual external IPs
+- **Security**: Centralized egress control and monitoring
+- **Scalability**: Automatic scaling based on traffic
+- **Observability**: Comprehensive logging of all egress traffic
 
 ### Identity and Access Management
 
@@ -345,14 +393,44 @@ Application → Secret Manager → Encrypted Storage
 - **Access control**: Fine-grained permissions
 - **Audit trail**: Access logging
 
-### SSH Key Management
+### Secret Management Architecture
 
-Secure handling of authentication credentials:
+Comprehensive secrets management with GitOps integration:
 
-- **Encrypted storage**: Keys stored encrypted in Secret Manager
-- **Temporary usage**: Keys decrypted only during operations
-- **Automatic cleanup**: Keys removed after use
-- **No persistence**: No keys left on disk
+#### Secret Categories
+1. **Application Secrets**
+   - SSL certificates and domains
+   - API keys and tokens
+   - Application credentials
+
+2. **GKE/ArgoCD Secrets**
+   - OAuth client credentials
+   - Webhook URLs
+   - Service account keys
+   - GitHub personal access tokens
+
+3. **Database Secrets**
+   - Admin passwords
+   - DBA credentials
+   - Connection strings
+
+#### External Secrets Operator Integration
+Secrets are synchronized to Kubernetes using External Secrets Operator:
+
+```yaml
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: gcpsm
+spec:
+  provider:
+    gcpsm:
+      projectID: "dev-01"
+      auth:
+        workloadIdentity:
+          clusterLocation: europe-west2
+          clusterName: cluster-01
+```
 
 ## Operational Considerations
 
@@ -392,16 +470,50 @@ Multi-level protection:
 - **Data backups**: Automated backup strategies
 - **Documentation**: Runbooks for common scenarios
 
-### Data Management
+### GitOps Platform Architecture
 
-Automated data operations and lifecycle:
+#### ArgoCD Bootstrap Configuration
+The infrastructure includes a fully configured ArgoCD GitOps platform:
 
-- **Schedule-based execution**: 
-  - Incremental operations: Configurable frequency
-  - Full operations: Weekly or as needed
-- **Direct operations**: Cloud-native data management
-- **Parallel processing**: Multiple operations for efficiency
-- **Error handling**: Automatic retry and alerting
+```hcl
+# Bootstrap configuration with dynamic paths
+locals {
+  project_base_path = dirname(dirname(dirname(dirname(get_terragrunt_dir()))))
+  secrets_base_path = "${local.project_base_path}/secrets"
+}
+
+dependency "argocd_oauth_secret" {
+  config_path = "${local.secrets_base_path}/gke-argocd-oauth-client-secret"
+}
+```
+
+#### Features
+- **External Secrets Integration**: Automatic secret synchronization from Google Secret Manager
+- **OAuth Authentication**: Google OAuth for secure access
+- **Repository Sync**: GitHub repository integration for application deployment
+- **Ingress Configuration**: External IP with sslip.io domain generation
+- **Multi-cluster Support**: Ready for expansion to multiple clusters
+
+### IP Allocation Management
+
+Hierarchical IP allocation with comprehensive tracking:
+
+#### IP Space Organization
+- **Development**: 10.128.0.0/10 (4.2M IPs)
+- **Perimeter**: 10.192.0.0/10 (4.2M IPs)  
+- **Production**: 10.0.0.0/8 (16.7M IPs)
+- **Total Managed**: ~25M IP addresses
+
+#### Allocation Tracking
+Centralized tracking in `ip-allocation.yaml` with validation tools:
+
+```bash
+# Validate allocations
+python3 scripts/ip-allocation-checker.py validate
+
+# Suggest next allocation
+python3 scripts/ip-allocation-checker.py next dev-01
+```
 
 ## Scalability and Evolution
 
@@ -443,14 +555,24 @@ Designed for team scalability:
 
 ## Future Considerations
 
+### Implemented Patterns
+
+The architecture has successfully implemented:
+
+- **Kubernetes Platform**: GKE cluster with ArgoCD GitOps
+- **NAT Gateway Pattern**: Centralized egress with Cloud NAT
+- **Dynamic Configuration**: Terragrunt directory functions throughout
+- **Secret Synchronization**: External Secrets Operator integration
+- **IP Management**: Hierarchical allocation with validation
+
 ### Emerging Patterns
 
 The architecture is prepared for:
 
-- **Kubernetes adoption**: GKE integration ready
-- **Serverless expansion**: Cloud Run and Functions
-- **Data platform**: BigQuery and Dataflow integration
-- **ML/AI workloads**: Vertex AI compatibility
+- **Multi-cluster Expansion**: Support for cluster-02 through cluster-04
+- **Serverless Integration**: Cloud Run and Functions ready
+- **Data Platform**: BigQuery datasets already configured
+- **ML/AI Workloads**: Infrastructure supports Vertex AI
 
 ### Continuous Improvement
 
@@ -460,7 +582,3 @@ Regular review cycles for:
 - **Cost optimization**: Monthly cost analysis
 - **Performance tuning**: Based on metrics
 - **Documentation updates**: As patterns evolve
-
-## Conclusion
-
-This architecture provides a solid foundation for managing GCP infrastructure at scale. By combining OpenTofu's infrastructure provisioning capabilities with Terragrunt's configuration management and GCP's robust cloud services, we've created a system that is secure, scalable, and maintainable. The design principles and patterns established here ensure consistency while maintaining the flexibility needed for future growth and evolution.

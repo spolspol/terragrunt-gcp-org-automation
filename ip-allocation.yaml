@@ -1,0 +1,255 @@
+# IP Allocation Tracking for terragrunt-gcp-org-automation
+# This file tracks all IP allocations across the infrastructure
+# Development Block: 10.128.0.0/10
+
+metadata:
+  schema_version: "1.1"
+  last_updated: "2025-08-20"
+  description: "Hierarchical IP allocation tracking for GCP infrastructure - Optimized"
+
+# Global allocations
+global:
+  production:
+    block: "10.0.0.0/8" # Reserved for future production use
+  development:
+    block: "10.128.0.0/10"
+    description: "All development environments"
+  perimeter:
+    block: "10.192.0.0/10" # Reserved for future perimeter use
+
+# Development environments
+development:
+  block: "10.128.0.0/10"
+  range: "10.128.0.0 - 10.191.255.255"
+  total_ips: 4194304
+  environments:
+    # Active environment
+    dev-01:
+      block: "10.132.0.0/16"
+      range: "10.132.0.0 - 10.132.255.255"
+      total_ips: 65536
+      status: "active"
+      primary_subnets:
+        dmz:
+          cidr: "10.132.0.0/21"
+          range: "10.132.0.0 - 10.132.7.255"
+          size: 2048
+          description: "DMZ subnet for controlled external access"
+        private:
+          cidr: "10.132.8.0/21"
+          range: "10.132.8.0 - 10.132.15.255"
+          size: 2048
+          description: "Private subnet for internal resources"
+        public:
+          cidr: "10.132.16.0/21"
+          range: "10.132.16.0 - 10.132.23.255"
+          size: 2048
+          description: "Public subnet with NAT gateway internet access"
+        gke:
+          cidr: "10.132.64.0/18"
+          range: "10.132.64.0 - 10.132.127.255"
+          size: 16384
+          description: "Dedicated subnet for GKE clusters"
+      secondary_ranges:
+        cluster-01-pods:
+          cidr: "10.132.128.0/21"
+          range: "10.132.128.0 - 10.132.135.255"
+          size: 2048
+          description: "Pod IP range for cluster-01"
+        cluster-01-services:
+          cidr: "10.132.192.0/24"
+          range: "10.132.192.0 - 10.132.192.255"
+          size: 256
+          description: "Service IP range for cluster-01"
+        cluster-02-pods:
+          cidr: "10.132.136.0/21"
+          range: "10.132.136.0 - 10.132.143.255"
+          size: 2048
+          description: "Pod IP range for cluster-02 (reserved)"
+        cluster-02-services:
+          cidr: "10.132.193.0/24"
+          range: "10.132.193.0 - 10.132.193.255"
+          size: 256
+          description: "Service IP range for cluster-02 (reserved)"
+        cluster-03-pods:
+          cidr: "10.132.144.0/21"
+          range: "10.132.144.0 - 10.132.151.255"
+          size: 2048
+          description: "Pod IP range for cluster-03 (reserved)"
+        cluster-03-services:
+          cidr: "10.132.194.0/24"
+          range: "10.132.194.0 - 10.132.194.255"
+          size: 256
+          description: "Service IP range for cluster-03 (reserved)"
+        cluster-04-pods:
+          cidr: "10.132.152.0/21"
+          range: "10.132.152.0 - 10.132.159.255"
+          size: 2048
+          description: "Pod IP range for cluster-04 (reserved)"
+        cluster-04-services:
+          cidr: "10.132.195.0/24"
+          range: "10.132.195.0 - 10.132.195.255"
+          size: 256
+          description: "Service IP range for cluster-04 (reserved)"
+      reserved:
+        future-use-1:
+          cidr: "10.132.24.0/21"
+          range: "10.132.24.0 - 10.132.31.255"
+          size: 2048
+          description: "Reserved for future subnet expansion"
+        future-use-2:
+          cidr: "10.132.32.0/19"
+          range: "10.132.32.0 - 10.132.63.255"
+          size: 8192
+          description: "Reserved for future services"
+        future-use-3:
+          cidr: "10.132.160.0/19"
+          range: "10.132.160.0 - 10.132.191.255"
+          size: 8192
+          description: "Reserved for future GKE expansion"
+        future-use-4:
+          cidr: "10.132.196.0/22"
+          range: "10.132.196.0 - 10.132.199.255"
+          size: 1024
+          description: "Reserved for additional services"
+        future-use-5:
+          cidr: "10.132.200.0/21"
+          range: "10.132.200.0 - 10.132.207.255"
+          size: 2048
+          description: "Reserved for future expansion"
+        future-use-6:
+          cidr: "10.132.208.0/20"
+          range: "10.132.208.0 - 10.132.223.255"
+          size: 4096
+          description: "Reserved for future expansion"
+        future-use-7:
+          cidr: "10.132.224.0/19"
+          range: "10.132.224.0 - 10.132.255.255"
+          size: 8192
+          description: "Reserved for future expansion"
+      utilization:
+        allocated_ips: 33792
+        available_ips: 31744
+        utilization_percentage: 51.6
+
+    # Reserved for future environments
+    dev-02:
+      block: "10.133.0.0/16"
+      range: "10.133.0.0 - 10.133.255.255"
+      total_ips: 65536
+      status: "reserved"
+      primary_subnets:
+        dmz:
+          cidr: "10.133.0.0/21"
+        private:
+          cidr: "10.133.8.0/21"
+        public:
+          cidr: "10.133.16.0/21"
+        gke:
+          cidr: "10.133.64.0/18"
+
+    dev-03:
+      block: "10.134.0.0/16"
+      range: "10.134.0.0 - 10.134.255.255"
+      total_ips: 65536
+      status: "reserved"
+      primary_subnets:
+        dmz:
+          cidr: "10.134.0.0/21"
+        private:
+          cidr: "10.134.8.0/21"
+        public:
+          cidr: "10.134.16.0/21"
+        gke:
+          cidr: "10.134.64.0/18"
+
+    dev-04:
+      block: "10.135.0.0/16"
+      range: "10.135.0.0 - 10.135.255.255"
+      total_ips: 65536
+      status: "reserved"
+
+# Perimeter environments (formerly DMZ)
+perimeter:
+  block: "10.192.0.0/10"
+  range: "10.192.0.0 - 10.255.255.255"
+  total_ips: 4194304
+  environments:
+    data-staging:
+      block: "10.196.0.0/16"
+      range: "10.196.0.0 - 10.196.255.255"
+      total_ips: 65536
+      status: "reserved"
+      description: "Data staging environment"
+    dns-infra:
+      block: "10.197.0.0/16"
+      range: "10.197.0.0 - 10.197.255.255"
+      total_ips: 65536
+      status: "reserved"
+      description: "DNS infrastructure"
+
+# Production environments (future)
+production:
+  block: "10.0.0.0/8"
+  range: "10.0.0.0 - 10.255.255.255"
+  total_ips: 16777216
+  environments:
+    prod-01:
+      block: "10.4.0.0/16"
+      range: "10.4.0.0 - 10.4.255.255"
+      total_ips: 65536
+      status: "reserved"
+    prod-02:
+      block: "10.5.0.0/16"
+      range: "10.5.0.0 - 10.5.255.255"
+      total_ips: 65536
+      status: "reserved"
+
+# External IP allocations (examples)
+external_ips:
+  nat_gateways:
+    - name: "dev-01-nat-gateway"
+      ip: "35.246.0.1"
+      region: "europe-west2"
+      purpose: "NAT Gateway for dev-01"
+  cluster_services:
+    - name: "dev-01-cluster-01-services"
+      ip: "35.246.0.123"
+      region: "europe-west2"
+      purpose: "Ingress for cluster-01"
+  sql_servers:
+    - name: "dev-01-sql-server-01"
+      ip: "35.246.0.200"
+      region: "europe-west2"
+      purpose: "SQL Server external access"
+
+# Summary statistics
+summary:
+  total_development_ips: 4194304
+  total_perimeter_ips: 4194304
+  total_production_ips: 16777216
+  total_managed_ips: 24666624
+  active_environments: 1
+  reserved_environments: 8
+  ip_efficiency_percentage: 51.6
+
+# IP allocation rules and guidelines
+guidelines:
+  subnet_alignment:
+    - "/21 blocks must start at addresses divisible by 8"
+    - "/18 blocks must start at addresses divisible by 64"
+    - "/19 blocks must start at addresses divisible by 32"
+    - "/24 blocks are naturally aligned"
+  naming_conventions:
+    - "Primary subnets: {project}-{environment}-{type}"
+    - "Secondary ranges: {cluster-id}-{pods|services}"
+    - "External IPs: {project}-{resource}-{purpose}"
+  allocation_strategy:
+    - "Each environment gets a /16 block (65,536 IPs)"
+    - "GKE clusters get /18 primary (16,384 IPs)"
+    - "Pod ranges get /21 (2,048 IPs)"
+    - "Service ranges get /24 (256 IPs)"
+  growth_planning:
+    - "Support for up to 64 development environments"
+    - "Each environment can host 4-8 GKE clusters"
+    - "48.4% of dev-01 space available for growth"

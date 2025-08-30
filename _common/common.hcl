@@ -10,8 +10,10 @@ locals {
     bigquery        = "v10.1.0"
     sql_db          = "v15.0.0"
     vm              = "v13.2.4"
-    network         = "v6.0.1"
+    network         = "v11.1.1"
+    cloud_router    = "v7.1.0"
     gke             = "v37.0.0"
+    cloud_nat       = "v5.3.0"
     iam             = "v8.1.0"
     secret_manager  = "v0.8.0"
     cloud_storage   = "v11.0.0"
@@ -22,8 +24,7 @@ locals {
     monitoring      = "v7.1.0"
     project_factory = "v18.0.0"
     folders         = "v5.0.0"
-    external_ip     = "v3.2.0"
-    firewall_rules  = "v9.3.0"
+    address         = "v3.2.0"
 
     # Supporting modules
     terraform_validator = "v0.6.0"
@@ -34,6 +35,9 @@ locals {
     cloudflare             = "v4.0.0"
     null_label             = "v0.25.0"
     private_service_access = "main" # Coalfire module - using main branch
+
+    # Custom modules
+    argocd = "main" # Bootstrap ArgoCD module
   }
 
   # Compute-specific defaults
@@ -71,7 +75,7 @@ locals {
   # Common tags applied to all resources
   common_tags = {
     terraform_managed = "true"
-    repository        = "tg-gcp-infra-live"
+    repository        = "terragrunt-gcp-org-automation"
     owner             = "infrastructure-team"
   }
 
@@ -120,7 +124,12 @@ locals {
       "iam.googleapis.com",
       "monitoring.googleapis.com",
       "logging.googleapis.com",
-      "osconfig.googleapis.com"
+      "osconfig.googleapis.com",
+      "container.googleapis.com",
+      "gkebackup.googleapis.com",
+      "gkehub.googleapis.com",
+      "artifactregistry.googleapis.com",
+      "cloudresourcemanager.googleapis.com"
     ]
 
     log_retention_days = {

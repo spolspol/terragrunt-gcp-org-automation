@@ -1,233 +1,367 @@
 # GCP Infrastructure Architecture Diagram
 
-This document contains the comprehensive architecture diagram for the GCP infrastructure managed by this repository.
+This document provides a comprehensive visual representation of the GCP infrastructure managed by this repository, with clear relationship indicators and simplified connections.
 
 ## Overview
 
-The diagram shows the complete infrastructure hierarchy from the GCP Organization level down to individual resources, including:
+The infrastructure implements a hierarchical architecture with:
+- **Organizational Structure**: GCP Organization with folder hierarchy
+- **Environment Separation**: Development, perimeter, and production environments  
+- **Network Architecture**: VPC with NAT Gateway for secure egress
+- **Compute Resources**: GKE clusters, VMs, and SQL Server
+- **GitOps Platform**: ArgoCD for continuous delivery
+- **Security Components**: Secret Manager, IAM bindings, and firewall rules
 
-- **Organizational Structure**: GCP Organization, Billing Account, and Folder hierarchy
-- **Account Structure**: Non-production account with development environment
-- **Project Resources**: All services and resources within the dev-01 project
-- **Network Architecture**: VPC networks, private service access, and firewall rules
-- **Compute Infrastructure**: Linux and Windows server instances
-- **Storage Services**: Cloud Storage buckets, BigQuery datasets, and Cloud SQL
-- **Security Components**: Secret Manager, IAM bindings, and service accounts
-- **Management Tools**: OpenTofu (Terraform) state storage
+## Visual Conventions
 
-## Architecture Diagram
+| Line Style | Meaning | Example |
+|------------|---------|---------|
+| Solid (→) | Direct dependency/ownership | VPC → Subnet |
+| Dashed (-->) | Network flow with direction | VM --> NAT |
+| Dotted (..>) | Data flow | Secrets ..> Application |
+| Double (<-->) | Bidirectional communication | Client <--> Server |
+| No arrow | Structural relationship | Parent contains Child |
+
+## Complete Infrastructure Architecture
 
 ```mermaid
 graph TB
-    %% External Resources
-    BillingAccount["💳 Billing Account<br/>org-billing-account"]
-    AllowedIPs["🏠 Allowed IP Ranges<br/>• Office Network: 10.0.0.0/24<br/>• VPN Range: 192.168.1.0/24<br/>• Private Network: 172.16.0.0/16<br/>• Public Range: 203.0.113.0/24"]
-    
-    %% GCP Organization Container
-    subgraph GCPOrg["🏢 GCP Organization<br/>ID: org-123456789012 | Domain: example-org.com"]
+    %% External Components
+    subgraph External["🌐 External Environment"]
+        Internet["Internet"]
+        GitHub["GitHub Repositories"]
+        Users["Users/Clients"]
+    end
+
+    %% GCP Organization Structure
+    subgraph GCPOrg["🏢 GCP Organization (example-org.com)"]
         
-        %% Bootstrap Folder Structure
-        subgraph BootstrapFolder["📁 Bootstrap Folder<br/>ID: folders/123456789012"]
-        subgraph BootstrapProject["🗂️ GCP Project: org-automation"]
-            
-            %% Service Account
-            OrgSA["🔧 OpenTofu Org Service Account<br/>tofu-sa-org@<br/>org-automation.iam.gserviceaccount.com"]
-            
-            %% Storage Buckets
-            subgraph "🗄️ Bootstrap Storage"
-                StateStorage["🏗️ Main Infrastructure State<br/>GCS Bucket: org-tofu-state<br/>Location: europe-west2"]
-                BillingStorage["📊 Billing Usage Reports<br/>GCS Bucket: org-billing-usage-reports<br/>Location: europe-west2"]
+        %% Bootstrap Foundation
+        subgraph Bootstrap["📁 Bootstrap Folder"]
+            subgraph BootstrapProj["🗂️ org-automation Project"]
+                StateStorage["📦 Terraform State<br/>org-tofu-state bucket"]
+                OrgSA["🔑 Org Service Account<br/>tofu-sa-org@"]
             end
         end
-    end
-    
-    %% Development Folder Structure
-    subgraph DevelopmentFolder["📁 Development Folder"]
-        subgraph Dev01Project["🗂️ GCP Project: dev-01"]
-            
-            %% Network infrastructure
-            DevVPCNetwork["🌐 VPC Network<br/>vpc-network<br/>Region: europe-west2<br/>Subnet CIDR: 10.30.0.0/16"]
-            
-            %% Project Service Account
-            DevProjectSA["🔧 Project Service Account<br/>non-production-dev-01-tf@<br/>dev-01.iam.gserviceaccount.com"]
-            
-            %% Network Security
-            subgraph DevNetworkSecurity["🔒 Network Security"]
-                subgraph "🛡️ Firewall Rules"
-                    DevFirewallRules["🛡️ Access Rules<br/>• SSH (Port 22)<br/>• HTTP (Port 80)<br/>• HTTPS (Port 443)<br/>Target tags: linux-server, web-server"]
+        
+        %% Development Environment
+        subgraph Development["📁 Development Folder"]
+            subgraph DevProj["🗂️ dev-01 Project"]
+                
+                %% Core Networking
+                subgraph Network["🌐 Network Layer"]
+                    VPC["VPC Network<br/>10.132.0.0/16"]
+                    
+                    subgraph Subnets["Subnet Configuration"]
+                        DMZ["DMZ: 10.132.0.0/21"]
+                        Private["Private: 10.132.8.0/21"]
+                        Public["Public: 10.132.16.0/21"]
+                        GKESub["GKE: 10.132.64.0/18"]
+                    end
+                    
+                    subgraph NATGateway["NAT Gateway Stack"]
+                        Router["Cloud Router<br/>BGP ASN: 64514"]
+                        CloudNAT["Cloud NAT"]
+                        NATExtIP["NAT External IP"]
+                        Router --> CloudNAT
+                        CloudNAT --> NATExtIP
+                    end
+                    
+                    VPC --> Subnets
+                    Subnets --> Router
                 end
                 
-                subgraph "🌍 External IPs"
-                    DevLinuxServerIP["📍 Linux Server External IP<br/>dev-01-linux-server-01"]
-                    DevWebServerIP["📍 Web Server External IP<br/>dev-01-web-server-01"]
+                %% Compute Resources
+                subgraph Compute["💻 Compute Resources"]
+                    subgraph GKECluster["GKE Infrastructure"]
+                        GKE["GKE Cluster<br/>cluster-01"]
+                        ArgoCD["ArgoCD Bootstrap"]
+                        GKEExtIP["Ingress External IP"]
+                        GKE --> ArgoCD
+                    end
+                    
+                    subgraph VirtualMachines["Virtual Machines"]
+                        LinuxVM["Linux Server VM"]
+                        WebVM["Web Server VM"]
+                        SQLVM["SQL Server VM"]
+                    end
+                end
+                
+                %% Security Layer
+                subgraph Security["🔒 Security Components"]
+                    Secrets["Secret Manager<br/>13 secrets"]
+                    IAM["IAM Bindings"]
+                    Firewall["Firewall Rules"]
+                end
+                
+                %% Storage Layer
+                subgraph Storage["💾 Storage Services"]
+                    GCS["Cloud Storage Buckets"]
+                    BigQuery["BigQuery Datasets"]
+                    CloudSQL["Cloud SQL Instances"]
                 end
             end
-            
-            %% Storage services
-            subgraph "🪣 Dev Cloud Storage"
-                DataBucket["📦 Data Storage<br/>dev-01-data-bucket"]
-                StaticContentBucket["🌐 Static Content<br/>dev-01-static-content"]
-            end
-            
-            %% Database services
-            subgraph "🗄️ Dev Database Services"
-                DevCloudSQL["🗄️ Cloud SQL Server 2019<br/>dev-01-sql-server-main<br/>Zone: europe-west2-a<br/>Private Service Access"]
-                DevBigQuery["📊 BigQuery Dataset<br/>analytics-dataset<br/>Location: EU"]
-            end
-            
-            %% Compute Engine section
-            subgraph "💻 Dev Compute Engine"
-                DevLinuxServer["🐧 Linux Server VM<br/>dev-01-linux-server-01<br/>Zone: europe-west2-a<br/>Type: e2-micro"]
-                DevWebServer["🌐 Web Server VM<br/>dev-01-web-server-01<br/>Zone: europe-west2-a<br/>Type: e2-medium<br/>Nginx web server"]
-            end
-            
-            subgraph "🔐 Dev Secret Manager"
-                DevAppSecrets["🔑 Application Secrets<br/>• app-secret<br/>• ssl-cert-email<br/>• ssl-domains"]
-            end
-            
-            subgraph "🔐 Dev IAM Bindings"
-                DevIAMBindings["👤 Service Account Permissions<br/>• Storage Object Admin<br/>• Secret Manager Accessor<br/>• Logging Writer<br/>• Monitoring Writer<br/>• Project-level Admin (TF SA)"]
-            end
-            
-            %% Private Service Access
-            DevPSA["🔒 Private Service Access<br/>servicenetworking.googleapis.com<br/>IP Range: 10.100.0.0/24"]
+        end
+    end
+
+    %% Primary Connections (Simplified)
+    
+    %% External Connections
+    NATExtIP --> Internet
+    GKEExtIP --> Internet
+    Users --> GKEExtIP
+    GitHub -.-> ArgoCD
+    
+    %% Internal Network Flow  
+    VirtualMachines --> CloudNAT
+    GKE --> CloudNAT
+    
+    %% Security Relationships
+    Secrets -.-> ArgoCD
+    Secrets -.-> VirtualMachines
+    IAM -.-> Compute
+    Firewall --> Network
+    
+    %% Data Flow
+    StateStorage -.-> Development
+    CloudSQL -.-> VirtualMachines
+    
+    %% Styling
+    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef org fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef network fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef compute fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef security fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef storage fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    
+    class External external
+    class GCPOrg,Bootstrap,Development org
+    class Network,VPC,NATGateway network
+    class Compute,GKECluster,VirtualMachines compute
+    class Security security
+    class Storage storage
+```
+
+## Detailed Component Views
+
+### Network Architecture Detail
+
+```mermaid
+flowchart LR
+    subgraph VPCDetail["VPC Network (10.132.0.0/16)"]
+        subgraph PrimaryNets["Primary Subnets"]
+            D[DMZ<br/>10.132.0.0/21]
+            P[Private<br/>10.132.8.0/21]
+            PU[Public<br/>10.132.16.0/21]
+            G[GKE<br/>10.132.64.0/18]
+        end
+        
+        subgraph SecondaryNets["GKE Secondary Ranges"]
+            POD[Pods<br/>10.132.128.0/21]
+            SVC[Services<br/>10.132.192.0/24]
+        end
+        
+        G -.-> POD
+        G -.-> SVC
+    end
+    
+    subgraph EgressPath["Egress Path"]
+        CR[Cloud Router]
+        CN[Cloud NAT]
+        EIP[External IP]
+        CR --> CN --> EIP
+    end
+    
+    PrimaryNets --> CR
+    EIP --> I[Internet]
+    
+    style VPCDetail fill:#e3f2fd
+    style EgressPath fill:#fff3e0
+```
+
+### GitOps Architecture Detail
+
+```mermaid
+flowchart TB
+    subgraph GitOpsStack["GitOps Platform"]
+        subgraph Prerequisites["Prerequisites"]
+            GKEC[GKE Cluster]
+            SECS[Secrets]
+            EXTIP[External IP]
+        end
+        
+        subgraph ArgoComponents["ArgoCD Components"]
+            ARGO[ArgoCD Core]
+            ESO[External Secrets<br/>Operator]
+            INGRESS[Ingress Controller]
+        end
+        
+        subgraph Applications["Deployed Apps"]
+            APPS[Application<br/>Manifests]
+            CONFIGS[ConfigMaps]
+            DEPLOYS[Deployments]
         end
     end
     
-    %% End of GCP Organization
-    end
+    GKEC --> ARGO
+    SECS -.-> ESO
+    ESO -.-> ARGO
+    EXTIP --> INGRESS
+    ARGO --> Applications
     
-    %% Dev Network connections
-    DevVPCNetwork --> DevLinuxServer
-    DevVPCNetwork --> DevWebServer
-    DevVPCNetwork --> DevPSA
-    DevPSA --> DevCloudSQL
+    GITHUB[GitHub Repos] -.-> ARGO
     
-    %% Dev Firewall connections
-    DevFirewallRules --> DevVPCNetwork
-    AllowedIPs --> DevFirewallRules
-    
-    %% Dev External IP connections
-    DevLinuxServerIP --> DevLinuxServer
-    DevWebServerIP --> DevWebServer
-    
-    %% Dev Secret connections
-    DevLinuxServer --> DevAppSecrets
-    DevWebServer --> DevAppSecrets
-    
-    %% Dev Storage connections
-    DevLinuxServer --> DataBucket
-    DevWebServer --> StaticContentBucket
-    
-    %% External connections
-    BillingAccount --> GCPOrg
-    
-    %% Bootstrap connections
-    OrgSA --> StateStorage
-    OrgSA --> BillingStorage
-    
-    %% Dev Service Account connections
-    DevProjectSA --> Dev01Project
-    DevProjectSA --> DevIAMBindings
-    
-    %% Styling with high contrast text
-    classDef orgLevel fill:#e1f5fe,stroke:#0277bd,stroke-width:3px,color:#000000
-    classDef folderLevel fill:#f8f9fa,stroke:#495057,stroke-width:3px,color:#000000
-    classDef bootstrapLevel fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000000
-    classDef projectLevel fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000000
-    classDef devProjectLevel fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000000
-    classDef computeLevel fill:#e8f5e8,stroke:#388e3c,stroke-width:2px,color:#000000
-    classDef storageLevel fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000000
-    classDef networkLevel fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000000
-    classDef securityLevel fill:#ffebee,stroke:#d32f2f,stroke-width:2px,color:#000000
-    classDef externalLevel fill:#f1f3f4,stroke:#5f6368,stroke-width:2px,color:#000000
-    classDef serviceAccountLevel fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px,color:#000000
-    
-    class GCPOrg orgLevel
-    class BillingAccount externalLevel
-    class BootstrapFolder,DevelopmentFolder folderLevel
-    class BootstrapProject bootstrapLevel
-    class Dev01Project devProjectLevel
-    class OrgSA,DevProjectSA serviceAccountLevel
-    class DevLinuxServer,DevWebServer computeLevel
-    class DataBucket,StaticContentBucket,StateStorage,BillingStorage storageLevel
-    class DevCloudSQL,DevBigQuery storageLevel
-    class DevVPCNetwork networkLevel
-    class DevAppSecrets,DevFirewallRules,DevIAMBindings,DevPSA securityLevel
-    class AllowedIPs,DevLinuxServerIP,DevWebServerIP externalLevel
+    style GitOpsStack fill:#c5e1a5
+    style Prerequisites fill:#fff3e0
+    style ArgoComponents fill:#dcedc8
+    style Applications fill:#f1f8e9
 ```
 
-## Component Details
+### Security Layer Detail
 
-### Organizational Level
-- **GCP Organization**: Top-level container (ID: org-123456789012) for example-org.com domain
-- **Billing Account**: org-billing-account - Manages costs and billing for all projects
-- **Allowed IP Ranges**: Specific IP addresses and ranges allowed through firewall rules
+```mermaid
+flowchart TD
+    subgraph SecurityComponents["Security Architecture"]
+        subgraph SecretsManagement["Secrets Management"]
+            SM[Secret Manager]
+            subgraph SecretTypes["Secret Categories"]
+                GKE_SEC[GKE Secrets<br/>• OAuth Tokens<br/>• Webhooks<br/>• Service Accounts]
+                APP_SEC[App Secrets<br/>• SSL Certs<br/>• API Keys]
+                DB_SEC[Database<br/>• Admin Password<br/>• DBA Password]
+            end
+            SM --> SecretTypes
+        end
+        
+        subgraph AccessControl["Access Control"]
+            IAM_BIND[IAM Bindings]
+            SA[Service Accounts]
+            RBAC[GKE RBAC]
+        end
+        
+        subgraph NetworkSecurity["Network Security"]
+            FW[Firewall Rules]
+            PSA[Private Service<br/>Access]
+            NAT_SEC[NAT Gateway<br/>Security]
+        end
+    end
+    
+    SecretsManagement -.-> AccessControl
+    AccessControl --> NetworkSecurity
+    
+    style SecurityComponents fill:#fce4ec
+    style SecretsManagement fill:#f8bbd0
+    style AccessControl fill:#f48fb1
+    style NetworkSecurity fill:#f06292
+```
 
-### Bootstrap Infrastructure
-- **Bootstrap Folder**: Core infrastructure management folder (ID: folders/123456789012)
-- **org-automation Project**: Central project for infrastructure automation
-  - **OpenTofu State Bucket**: `org-tofu-state` - Stores Terragrunt/OpenTofu state files
-  - **Billing Reports Bucket**: `org-billing-usage-reports` - Centralized billing data
-  - **Organizational Service Account**: `tofu-sa-org@org-automation.iam.gserviceaccount.com` 
-    - Organization-wide permissions for infrastructure management
-    - Used by GitHub Actions workflows for CI/CD
+## Resource Dependency Graph
 
-### Infrastructure Management
-- **Service Accounts**: Identity and access management for automation
-  - **Organizational Service Account**: Organization-wide infrastructure operations via tofu-sa-org
-  - **Development Project Service Account**: `non-production-dev-01-tf@dev-01.iam.gserviceaccount.com` - Project operations
+```mermaid
+graph LR
+    subgraph Foundation
+        ORG[Organization]
+        FOLDER[Folders]
+        PROJECT[Projects]
+        ORG --> FOLDER --> PROJECT
+    end
+    
+    subgraph Infrastructure
+        VPC_NET[VPC Network]
+        EXT_IP[External IPs]
+        ROUTER[Cloud Router]
+        NAT[Cloud NAT]
+        PROJECT --> VPC_NET
+        VPC_NET --> ROUTER
+        ROUTER --> NAT
+        PROJECT --> EXT_IP
+    end
+    
+    subgraph Resources
+        GKE_RES[GKE Clusters]
+        VM_RES[VM Instances]
+        DB_RES[Databases]
+        NAT --> GKE_RES
+        NAT --> VM_RES
+        VPC_NET --> DB_RES
+    end
+    
+    subgraph Platform
+        ARGOCD[ArgoCD]
+        APPS[Applications]
+        GKE_RES --> ARGOCD
+        ARGOCD --> APPS
+    end
+    
+    style Foundation fill:#e8f5e9
+    style Infrastructure fill:#e3f2fd  
+    style Resources fill:#fff3e0
+    style Platform fill:#c5e1a5
+```
 
-### Development Project Resources
-- **VPC Network**: Isolated network for development resources
-  - Subnet CIDR: `10.30.0.0/16`
-  - Region: `europe-west2`
-- **External IPs**: Dedicated IPs for each compute instance
-- **Compute Infrastructure**:
-  - **Linux Server VM**: General purpose Linux server (e2-micro) in europe-west2-a
-  - **Web Server VM**: Nginx web server (e2-medium) in europe-west2-a
-- **Storage**:
-  - **Data Bucket**: General application data storage
-  - **Static Content Bucket**: Static web content hosting
-- **Database Services**:
-  - **Cloud SQL**: SQL Server 2019 instance with Private Service Access
-  - **BigQuery**: Analytics dataset in EU region
-- **Security & Secrets**:
-  - **Application Secrets**: app-secret, ssl-cert-email, ssl-domains
-  - **IAM Bindings**: Granular permissions for service accounts
+## IP Allocation Overview
 
-## Key Architecture Patterns
+```mermaid
+pie title "IP Space Utilization (dev-01)"
+    "DMZ Subnet" : 2048
+    "Private Subnet" : 2048
+    "Public Subnet" : 2048
+    "GKE Primary" : 16384
+    "GKE Pods" : 2048
+    "GKE Services" : 256
+    "Reserved" : 31744
+```
 
-### Folder Hierarchy
-- **bootstrap**: Core infrastructure management and automation resources
-- **development**: Development environment containing dev-01 project
+## Deployment Flow
 
-### Network Security
-- VPC network with private subnet (10.30.0.0/16)
-- Firewall rules restrict access to specific IP addresses
-- External IPs are assigned per instance for public access
-- Private Service Access for Cloud SQL connectivity
+```mermaid
+sequenceDiagram
+    participant User
+    participant GitHub
+    participant Terragrunt
+    participant GCP
+    participant ArgoCD
+    
+    User->>GitHub: Push infrastructure code
+    GitHub->>Terragrunt: Trigger CI/CD
+    Terragrunt->>GCP: Apply infrastructure
+    GCP-->>Terragrunt: Resources created
+    Terragrunt->>ArgoCD: Deploy bootstrap
+    ArgoCD->>GitHub: Sync applications
+    ArgoCD->>GCP: Deploy workloads
+    GCP-->>User: Infrastructure ready
+```
 
-### Security Model
-- Dedicated service accounts for least privilege access
-- Secrets stored in Google Secret Manager
-- Tag-based firewall rules for granular control
-- IAM bindings at both project and resource levels
+## Key Features Highlighted
 
-### Storage Architecture
-- **Cloud Storage Buckets**: 
-  - data-bucket: General application data storage
-  - static-content: Static web content hosting
-- **BigQuery**: analytics-dataset for data warehousing
-- **Cloud SQL**: sql-server-main for relational database needs
-- Support for different storage classes and lifecycle policies
+### 1. **Hierarchical Organization**
+- Clear folder structure from Organization to Projects
+- Environment separation (Development/Perimeter/Production)
+- Logical resource grouping
 
-## Usage
+### 2. **Network Security**
+- Private subnets with NAT Gateway
+- Centralized egress control
+- Firewall rules and Private Service Access
 
-This diagram can be viewed in any Markdown renderer that supports Mermaid diagrams, including:
-- GitHub
-- GitLab
-- Markdown editors with Mermaid support
-- Documentation sites (GitBook, Confluence, etc.)
+### 3. **GitOps Integration**
+- ArgoCD for continuous delivery
+- External Secrets Operator
+- GitHub repository synchronization
 
-To edit the diagram, modify the Mermaid code block above and the changes will be reflected in the rendered output.
+### 4. **Comprehensive Monitoring**
+- State tracking in GCS
+- Secret management
+- IAM controls
+
+### 5. **Scalability**
+- Support for multiple GKE clusters
+- Reserved IP ranges for growth
+- Modular Terragrunt configuration
+
+## Navigation
+
+- [Architecture Summary](ARCHITECTURE_SUMMARY.md) - Design principles and rationale
+- [Network Architecture](NETWORK_ARCHITECTURE.md) - Detailed network design
+- [GitOps Architecture](GITOPS_ARCHITECTURE.md) - ArgoCD and deployment patterns
+- [IP Allocation](IP_ALLOCATION.md) - IP address management
+- [Current State](CURRENT_STATE.md) - Live infrastructure status
