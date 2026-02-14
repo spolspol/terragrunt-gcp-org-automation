@@ -2,24 +2,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
-include "account" {
-  path = find_in_parent_folders("account.hcl")
-}
-
-include "env" {
-  path = find_in_parent_folders("env.hcl")
-}
-
-include "project" {
-  path = find_in_parent_folders("project.hcl")
-}
-
-include "common" {
-  path = "${get_repo_root()}/_common/common.hcl"
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
 include "network_template" {
-  path = "${get_repo_root()}/_common/templates/network.hcl"
+  path           = "${get_repo_root()}/_common/templates/network.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "project" {
@@ -33,53 +23,80 @@ dependency "project" {
 }
 
 locals {
-  account_vars = read_terragrunt_config(find_in_parent_folders("account.hcl"))
-  env_vars     = read_terragrunt_config(find_in_parent_folders("env.hcl"))
-  project_vars = read_terragrunt_config(find_in_parent_folders("project.hcl"))
-  common_vars  = read_terragrunt_config("${get_repo_root()}/_common/common.hcl")
-
-  merged_vars = merge(
-    local.account_vars.locals,
-    local.env_vars.locals,
-    local.project_vars.locals,
-    local.common_vars.locals
-  )
-
-  # Only use prefix if it exists and is not empty
-  name_prefix = try(local.merged_vars.name_prefix, "")
-  # Use project_name from outputs for network naming (evaluated in inputs section)
-  parent_folder_name = basename(get_terragrunt_dir())
+  network_name = "${dependency.project.outputs.project_name}-vpc-network"
 }
 
-inputs = merge(
-  read_terragrunt_config("${get_repo_root()}/_common/templates/network.hcl").inputs,
-  local.merged_vars,
-  {
-    project_id       = try(dependency.project.outputs.project_id, "mock-project-id")
-    network_name     = "${dependency.project.outputs.project_name}-${local.parent_folder_name}"
-    environment_type = local.merged_vars.environment_type
+inputs = {
+  project_id       = try(dependency.project.outputs.project_id, "mock-project-id")
+  network_name     = local.network_name
+  environment_type = include.base.locals.environment_type
 
-    subnets = [
-      {
-        subnet_name           = "${dependency.project.outputs.project_name}-${local.parent_folder_name}-subnet-01"
-        subnet_ip             = "10.10.0.0/16"
-        subnet_region         = try(local.env_vars.locals.region, "europe-west2")
-        subnet_private_access = true
-        subnet_flow_logs      = false
-        description           = "Primary subnet for ${dependency.project.outputs.project_name}-${local.parent_folder_name}"
-      }
-    ]
+  subnets = [
+    {
+      # DMZ subnet - for bastion hosts, jump boxes, and publicly-facing services
+      subnet_name           = "${local.network_name}-dmz"
+      subnet_ip             = "10.10.0.0/21"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = true
+      description           = "DMZ subnet for ${dependency.project.outputs.project_name}"
+    },
+    {
+      # Private subnet - for internal services, databases, and backend workloads
+      subnet_name           = "${local.network_name}-private"
+      subnet_ip             = "10.10.8.0/21"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = true
+      description           = "Private subnet for ${dependency.project.outputs.project_name}"
+    },
+    {
+      # Public subnet - for services requiring internet access via NAT
+      subnet_name           = "${local.network_name}-public"
+      subnet_ip             = "10.10.16.0/21"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = false
+      description           = "Public subnet for ${dependency.project.outputs.project_name}"
+    },
+    {
+      # GKE subnet - dedicated subnet for GKE nodes with secondary ranges for pods/services
+      subnet_name           = "${local.network_name}-gke"
+      subnet_ip             = "10.10.64.0/20"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = true
+      description           = "GKE subnet for ${dependency.project.outputs.project_name}"
+    },
+    {
+      # CloudRun/Serverless subnet - for VPC connector or Direct VPC egress
+      subnet_name           = "${local.network_name}-serverless"
+      subnet_ip             = "10.10.96.0/23"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = false
+      description           = "Serverless subnet for ${dependency.project.outputs.project_name}"
+    },
+  ]
 
-    # Optionally add secondary ranges, routes, firewall_rules, etc.
-    network_labels = merge(
+  # Secondary IP ranges for GKE pods and services
+  secondary_ranges = {
+    "${local.network_name}-gke" = [
       {
-        component   = "network"
-        environment = local.merged_vars.environment
-        name_prefix = local.name_prefix
+        range_name    = "cluster-01-pods"
+        ip_cidr_range = "10.10.128.0/17"
       },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {}),
-      try(local.merged_vars.project_labels, {})
-    )
+      {
+        range_name    = "cluster-01-services"
+        ip_cidr_range = "10.10.112.0/20"
+      },
+    ]
   }
-)
+
+  network_labels = merge(
+    include.base.locals.standard_labels,
+    {
+      component = "network"
+    }
+  )
+}

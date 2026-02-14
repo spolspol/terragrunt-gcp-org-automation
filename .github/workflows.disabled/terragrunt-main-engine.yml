@@ -1,0 +1,642 @@
+name: IaC Engine
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: terragrunt-main-engine
+  cancel-in-progress: false
+
+jobs:
+  detect-changes:
+    name: "Detect Changes"
+    runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.detect.outputs.changes }}
+      emojis: ${{ steps.detect.outputs.emojis }}
+      names: ${{ steps.detect.outputs.names }}
+      action_name: ${{ steps.set-action-name.outputs.action_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Action Name
+        id: set-action-name
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "action_name=apply" >> $GITHUB_OUTPUT
+          else
+            echo "action_name=validate" >> $GITHUB_OUTPUT
+          fi
+
+
+      - name: Detect Infrastructure Changes
+        id: detect
+        uses: ./.github/actions/detect-infrastructure-changes
+        with:
+          resource-definitions: .github/workflow-config/resource-definitions.yml
+          base-ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+
+  # Foundation resources
+  folders:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').folders }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').folders }}"
+    needs: [detect-changes]
+    if: fromJson(needs.detect-changes.outputs.changes || '{}').folders != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folders.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').folders.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folders.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folders.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folders.config.description }}
+    secrets: inherit
+
+  sub-folders:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['sub-folders'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['sub-folders'] }}"
+    needs: [detect-changes, folders]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}')['sub-folders'] != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['sub-folders'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['sub-folders'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['sub-folders'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['sub-folders'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['sub-folders'].config.description }}
+    secrets: inherit
+
+  folder-iam-bindings:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['folder-iam-bindings'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['folder-iam-bindings'] }}"
+    needs: [detect-changes, folders, sub-folders, project-iam-service-accounts]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').folder-iam-bindings != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['folder-iam-bindings'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').folder-iam-bindings.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folder-iam-bindings.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folder-iam-bindings.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').folder-iam-bindings.config.description }}
+    secrets: inherit
+
+  projects:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').projects }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').projects }}"
+    needs: [detect-changes, folders, sub-folders]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').projects != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').projects.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').projects.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').projects.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').projects.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').projects.config.description }}
+    secrets: inherit
+
+  # Security & IAM
+  project-iam-service-accounts:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['project-iam-service-accounts'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['project-iam-service-accounts'] }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-service-accounts != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['project-iam-service-accounts'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-service-accounts.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-service-accounts.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-service-accounts.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-service-accounts.config.description }}
+    secrets: inherit
+
+  project-iam-bindings:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['project-iam-bindings'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['project-iam-bindings'] }}"
+    needs: [detect-changes, projects, project-iam-service-accounts]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-bindings != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['project-iam-bindings'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-bindings.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-bindings.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-bindings.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').project-iam-bindings.config.description }}
+    secrets: inherit
+
+  org-iam-bindings:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['org-iam-bindings'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['org-iam-bindings'] }}"
+    needs: [detect-changes, projects, project-iam-service-accounts]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').org-iam-bindings != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['org-iam-bindings'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').org-iam-bindings.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').org-iam-bindings.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').org-iam-bindings.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').org-iam-bindings.config.description }}
+    secrets: inherit
+
+  certificate-authority-service:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['certificate-authority-service'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['certificate-authority-service'] }}"
+    needs: [detect-changes, projects, buckets]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').certificate-authority-service != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-authority-service'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').certificate-authority-service.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').certificate-authority-service.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').certificate-authority-service.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').certificate-authority-service.config.description }}
+    secrets: inherit
+
+  certificate-manager:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['certificate-manager'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['certificate-manager'] }}"
+    needs: [detect-changes, projects, certificate-authority-service]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-manager'] != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-manager'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-manager'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-manager'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-manager'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['certificate-manager'].config.description }}
+    secrets: inherit
+
+  # DNS
+  cloud-dns:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-dns'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-dns'] }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-dns'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns.config.description }}
+    secrets: inherit
+
+  cloud-dns-peering:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-dns-peering'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-dns-peering'] }}"
+    needs: [detect-changes, cloud-dns]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns-peering != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-dns-peering'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns-peering.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns-peering.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns-peering.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-dns-peering.config.description }}
+    secrets: inherit
+
+  # Storage & Data
+  secrets:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').secrets }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').secrets }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').secrets != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').secrets.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').secrets.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').secrets.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').secrets.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').secrets.config.description }}
+    secrets: inherit
+
+  bigquery:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').bigquery }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').bigquery }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').bigquery != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bigquery.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').bigquery.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bigquery.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bigquery.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bigquery.config.description }}
+    secrets: inherit
+
+  # Artifact Registry
+  artifact-registry:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['artifact-registry'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['artifact-registry'] }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}')['artifact-registry'] != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['artifact-registry'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['artifact-registry'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['artifact-registry'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['artifact-registry'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['artifact-registry'].config.description }}
+    secrets: inherit
+
+  buckets:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').buckets }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').buckets }}"
+    needs: [detect-changes, projects, project-iam-service-accounts]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').buckets != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').buckets.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').buckets.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').buckets.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').buckets.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').buckets.config.description }}
+    secrets: inherit
+
+  # Networking
+  vpc-network:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['vpc-network'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['vpc-network'] }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').vpc-network != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['vpc-network'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').vpc-network.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').vpc-network.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').vpc-network.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').vpc-network.config.description }}
+    secrets: inherit
+
+  external-ips:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['external-ips'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['external-ips'] }}"
+    needs: [detect-changes, projects, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').external-ips != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['external-ips'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').external-ips.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').external-ips.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').external-ips.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').external-ips.config.description }}
+    secrets: inherit
+
+  internal-ips:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['internal-ips'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['internal-ips'] }}"
+    needs: [detect-changes, projects, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').internal-ips != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['internal-ips'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').internal-ips.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').internal-ips.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').internal-ips.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').internal-ips.config.description }}
+    secrets: inherit
+
+  cloud-router:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-router'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-router'] }}"
+    needs: [detect-changes, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').cloud-router != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-router'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').cloud-router.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-router.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-router.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-router.config.description }}
+    secrets: inherit
+
+  cloud-nat:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-nat'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-nat'] }}"
+    needs: [detect-changes, cloud-router]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').cloud-nat != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-nat'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').cloud-nat.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-nat.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-nat.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-nat.config.description }}
+    secrets: inherit
+
+  firewall-rules:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['firewall-rules'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['firewall-rules'] }}"
+    needs: [detect-changes, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').firewall-rules != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['firewall-rules'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').firewall-rules.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').firewall-rules.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').firewall-rules.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').firewall-rules.config.description }}
+    secrets: inherit
+
+  ha-vpn:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['ha-vpn'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['ha-vpn'] }}"
+    needs: [detect-changes, vpc-network, cloud-router, secrets]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').ha-vpn != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['ha-vpn'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').ha-vpn.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ha-vpn.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ha-vpn.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ha-vpn.config.description }}
+    secrets: inherit
+
+  ncc-hub:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['ncc-hub'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['ncc-hub'] }}"
+    needs: [detect-changes, projects, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').ncc-hub != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['ncc-hub'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').ncc-hub.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ncc-hub.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ncc-hub.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ncc-hub.config.description }}
+    secrets: inherit
+
+  ncc-spoke:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['ncc-spoke'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['ncc-spoke'] }}"
+    needs: [detect-changes, vpc-network, ncc-hub]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').ncc-spoke != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['ncc-spoke'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').ncc-spoke.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ncc-spoke.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ncc-spoke.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').ncc-spoke.config.description }}
+    secrets: inherit
+
+  vpc-peering:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['vpc-peering'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['vpc-peering'] }}"
+    needs: [detect-changes, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').vpc-peering != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['vpc-peering'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').vpc-peering.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').vpc-peering.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').vpc-peering.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').vpc-peering.config.description }}
+    secrets: inherit
+
+  private-service-access:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['private-service-access'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['private-service-access'] }}"
+    needs: [detect-changes, vpc-network]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').private-service-access != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['private-service-access'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').private-service-access.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').private-service-access.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').private-service-access.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').private-service-access.config.description }}
+    secrets: inherit
+
+  # Compute resources
+  cloud-sql:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-sql'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-sql'] }}"
+    needs: [detect-changes, vpc-network, secrets]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').cloud-sql != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-sql'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').cloud-sql.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-sql.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-sql.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').cloud-sql.config.description }}
+    secrets: inherit
+
+  cloud-run:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-run'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-run'] }}"
+    needs: [detect-changes, projects, vpc-network, secrets]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').cloud-run != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-run'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-run'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-run'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-run'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-run'].config.description }}
+    secrets: inherit
+
+  # Cloud Armor
+  cloud-armor:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['cloud-armor'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['cloud-armor'] }}"
+    needs: [detect-changes, projects]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-armor'] != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-armor'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-armor'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-armor'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-armor'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['cloud-armor'].config.description }}
+    secrets: inherit
+
+  # Load Balancer
+  load-balancer:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['load-balancer'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['load-balancer'] }}"
+    needs: [detect-changes, projects, cloud-run, certificate-manager, cloud-armor]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}')['load-balancer'] != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['load-balancer'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['load-balancer'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['load-balancer'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['load-balancer'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['load-balancer'].config.description }}
+    secrets: inherit
+
+  instance-template:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['instance-template'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['instance-template'] }}"
+    needs: [detect-changes, vpc-network, external-ips, secrets, buckets, project-iam-service-accounts]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').instance-template != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['instance-template'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').instance-template.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').instance-template.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').instance-template.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').instance-template.config.description }}
+    secrets: inherit
+
+  compute:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').compute }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').compute }}"
+    needs: [detect-changes, instance-template]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').compute != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').compute.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').compute.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').compute.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').compute.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').compute.config.description }}
+    secrets: inherit
+
+  instance-iam-bindings:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['instance-iam-bindings'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['instance-iam-bindings'] }}"
+    needs: [detect-changes, instance-template]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').instance-iam-bindings != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['instance-iam-bindings'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').instance-iam-bindings.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').instance-iam-bindings.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').instance-iam-bindings.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').instance-iam-bindings.config.description }}
+    secrets: inherit
+
+  # GKE resources
+  gke:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').gke }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').gke }}"
+    needs: [detect-changes, vpc-network, secrets, internal-ips, external-ips, firewall-rules, cloud-nat]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').gke != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').gke.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke.config.description }}
+    secrets: inherit
+
+  gke-iam-bindings:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['gke-iam-bindings'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['gke-iam-bindings'] }}"
+    needs: [detect-changes, gke]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').gke-iam-bindings != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['gke-iam-bindings'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').gke-iam-bindings.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke-iam-bindings.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke-iam-bindings.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').gke-iam-bindings.config.description }}
+    secrets: inherit
+
+  # GKE Workload Identity
+  iam-workload-identity:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}')['iam-workload-identity'] }} ${{ fromJson(needs.detect-changes.outputs.names || '{}')['iam-workload-identity'] }}"
+    needs: [detect-changes, projects, gke]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}')['iam-workload-identity'] != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['iam-workload-identity'].config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}')['iam-workload-identity'].paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['iam-workload-identity'].config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['iam-workload-identity'].config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}')['iam-workload-identity'].config.description }}
+    secrets: inherit
+
+  bootstrap:
+    name: "${{ needs.detect-changes.outputs.action_name }} ${{ fromJson(needs.detect-changes.outputs.emojis || '{}').bootstrap }} ${{ fromJson(needs.detect-changes.outputs.names || '{}').bootstrap }}"
+    needs: [detect-changes, gke, iam-workload-identity, project-iam-bindings]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && fromJson(needs.detect-changes.outputs.changes || '{}').bootstrap != null
+    uses: ./.github/workflows/terragrunt-reusable.yaml
+    with:
+      mode: ${{ github.event_name == 'push' && 'apply' || 'validate' }}
+      resource_type: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bootstrap.config.id }}
+      resource_paths: ${{ toJson(fromJson(needs.detect-changes.outputs.changes || '{}').bootstrap.paths) }}
+      template_path: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bootstrap.config.template_path }}
+      resource_emoji: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bootstrap.config.emoji }}
+      resource_description: ${{ fromJson(needs.detect-changes.outputs.changes || '{}').bootstrap.config.description }}
+    secrets: inherit
+
+  # Merge gate
+  merge-gate:
+    name: "Merge Gate"
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - detect-changes
+      # Foundation
+      - org-iam-bindings
+      - folders
+      - sub-folders
+      - folder-iam-bindings
+      - projects
+      # Security & IAM
+      - project-iam-service-accounts
+      - project-iam-bindings
+      - certificate-authority-service
+      - certificate-manager
+      # DNS
+      - cloud-dns
+      - cloud-dns-peering
+      # Storage & Data
+      - secrets
+      - bigquery
+      - artifact-registry
+      - buckets
+      # Networking
+      - vpc-network
+      - external-ips
+      - internal-ips
+      - cloud-router
+      - cloud-nat
+      - firewall-rules
+      - ha-vpn
+      - ncc-hub
+      - ncc-spoke
+      - vpc-peering
+      - private-service-access
+      # Compute
+      - cloud-sql
+      - cloud-run
+      - cloud-armor
+      - load-balancer
+      - instance-template
+      - compute
+      - instance-iam-bindings
+      # GKE
+      - gke
+      - gke-iam-bindings
+      - iam-workload-identity
+      - bootstrap
+    steps:
+      - name: Check job status
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ]; then
+            echo "One or more jobs failed."
+            exit 1
+          elif [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more jobs were cancelled."
+            exit 1
+          else
+            echo "All jobs passed or were skipped."
+            exit 0
+          fi

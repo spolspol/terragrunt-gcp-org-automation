@@ -1,0 +1,340 @@
+# Resource definitions for GitHub Actions workflows
+# This file defines resource types, their dependencies, and path patterns
+
+resources:
+  # Foundation resources
+  folders:
+    dependencies: []
+    path_pattern: "live/non-production/*/folder/**"
+    template_path: "_common/templates/folder"
+    emoji: "📁"
+    name: "Folders"
+    description: "GCP parent folder hierarchy"
+
+  sub-folders:
+    dependencies: [folders]
+    path_pattern: "live/non-production/*/*/folder/**"
+    template_path: "_common/templates/folder"
+    emoji: "📂"
+    name: "Sub-Folders"
+    description: "GCP nested folder hierarchy"
+
+  projects:
+    dependencies: [folders, sub-folders]
+    path_pattern: "live/**/project/**"
+    template_path: "_common/templates/project"
+    emoji: "📦"
+    name: "Projects"
+    description: "GCP projects"
+
+  # Network resources
+  vpc-network:
+    dependencies: [projects]
+    path_pattern:
+      - "live/**/vpc-network/**"
+      - "live/**/*-vpc-network/**"
+    template_path: "_common/templates/network"
+    emoji: "🌐"
+    name: "VPC Network"
+    description: "VPC networks and subnets"
+
+  cloud-router:
+    dependencies: [vpc-network]
+    path_pattern: "live/**/cloud-router/**"
+    template_path: "_common/templates/cloud-router"
+    emoji: "📡"
+    name: "Cloud Router"
+    description: "Cloud Router for NAT and VPN"
+
+  cloud-nat:
+    dependencies: [cloud-router]
+    path_pattern: "live/**/cloud-nat/**"
+    template_path: "_common/templates/cloud-nat"
+    emoji: "🌍"
+    name: "Cloud NAT"
+    description: "Cloud NAT gateways"
+
+  vpc-peering:
+    dependencies: [vpc-network]
+    path_pattern: "live/**/vpc-peering/**"
+    template_path: "_common/templates/vpc_peering.hcl"
+    emoji: "🔗"
+    name: "VPC Peering"
+    description: "VPC peering connections"
+
+  firewall-rules:
+    dependencies: [vpc-network]
+    path_pattern:
+      - "live/**/firewall-rules/**"
+      - "live/**/firewall.hcl"
+    template_path: "_common/templates/firewall_rules"
+    emoji: "🛡"
+    name: "Firewall Rules"
+    description: "VPC firewall rules"
+
+  external-ips:
+    dependencies: [projects, vpc-network]
+    path_pattern: "live/**/external-ips/**"
+    template_path: "_common/templates/external_ip"
+    emoji: "📍"
+    name: "External IPs"
+    description: "Static external IP addresses"
+
+  internal-ips:
+    dependencies: [projects, vpc-network]
+    path_pattern: "live/**/internal-ips/**"
+    template_path: "_common/templates/internal_ip"
+    emoji: "🏠"
+    name: "Internal IPs"
+    description: "Internal IP addresses"
+
+  private-service-access:
+    dependencies: [vpc-network]
+    path_pattern: "live/**/networking/private-service-access/**"
+    template_path: "_common/templates/private_service_access"
+    emoji: "🔌"
+    name: "Private Service Access"
+    description: "Private Service Access"
+
+  # Network Connectivity Center
+  ncc-hub:
+    dependencies: [projects, vpc-network]
+    path_pattern: "live/**/ncc-hub/**"
+    template_path: "_common/templates/ncc.hcl"
+    emoji: "🕸"
+    name: "NCC Hub"
+    description: "Network Connectivity Center hub"
+
+  ncc-spoke:
+    dependencies: [vpc-network, ncc-hub]
+    path_pattern: "live/**/ncc-spoke/**"
+    template_path: "_common/templates/ncc_spoke"
+    emoji: "💠"
+    name: "NCC Spoke"
+    description: "Network Connectivity Center spoke"
+
+  ha-vpn:
+    dependencies: [vpc-network, cloud-router, secrets]
+    path_pattern: "live/**/networking/ha-vpn-*/**"
+    template_path: "_common/templates/ha_vpn"
+    emoji: "🚇"
+    name: "HA VPN"
+    description: "HA VPN Gateway"
+
+  # IAM and security
+  folder-iam-bindings:
+    dependencies: [folders, project-iam-service-accounts]
+    path_pattern: "live/**/folder-iam-bindings/**"
+    template_path: "_common/templates/folder_iam_bindings"
+    emoji: "🗂️"
+    name: "Folder IAM Bindings"
+    description: "Folder IAM bindings"
+
+  project-iam-bindings:
+    dependencies: [projects, project-iam-service-accounts]
+    path_pattern: "live/**/iam-bindings/**"
+    exclude_pattern: "live/**/compute/**"
+    template_path: "_common/templates/iam_bindings"
+    emoji: "👥"
+    name: "Project IAM Bindings"
+    description: "Project IAM bindings"
+
+  org-iam-bindings:
+    dependencies: [projects, project-iam-service-accounts]
+    path_pattern: "live/**/org-iam-bindings/**"
+    template_path: "_common/templates/org_iam_bindings"
+    emoji: "🏛️"
+    name: "Org IAM Bindings"
+    description: "Organization IAM bindings"
+
+  project-iam-service-accounts:
+    dependencies: [projects]
+    path_pattern: "live/**/iam-service-accounts/*/**"
+    exclude_pattern: "live/**/iam-service-accounts/*.hcl"
+    template_path: "_common/templates/service_account"
+    emoji: "🤖"
+    name: "Service Accounts"
+    description: "IAM service accounts"
+
+  iam-workload-identity:
+    dependencies: [projects, gke]
+    path_pattern: "live/**/iam-workload-identity/**"
+    exclude_pattern: "live/**/iam-workload-identity/*.hcl"
+    template_path: "_common/templates/workload_identity"
+    emoji: "🔗"
+    name: "Workload Identity"
+    description: "GKE Workload Identity service accounts and bindings"
+
+  instance-iam-bindings:
+    dependencies: [instance-template]
+    path_pattern: "live/**/compute/**/iam-bindings/**"
+    template_path: "_common/templates/iam_bindings"
+    emoji: "🔑"
+    name: "Instance IAM Bindings"
+    description: "Instance-level IAM bindings"
+
+  gke-iam-bindings:
+    dependencies: [gke]
+    path_pattern: "live/**/gke/**/iam-bindings/**"
+    template_path: "_common/templates/iam_bindings"
+    emoji: "🔒"
+    name: "GKE IAM Bindings"
+    description: "GKE IAM bindings"
+
+  secrets:
+    dependencies: [projects]
+    path_pattern: "live/**/secrets/**"
+    template_path: "_common/templates/secret_manager"
+    emoji: "🔐"
+    name: "Secrets"
+    description: "Secret Manager secrets"
+
+  certificate-authority-service:
+    dependencies: [projects, buckets]
+    path_pattern: "live/**/certificate-authority-service/**"
+    template_path: "_common/templates/certificate_authority_service"
+    emoji: "🔏"
+    name: "Certificate Authority Service"
+    description: "Certificate Authority Service"
+
+  certificate-manager:
+    dependencies: [projects, certificate-authority-service]
+    path_pattern: "live/**/certificate-manager/**"
+    template_path: "_common/templates/certificate_manager"
+    emoji: "📜"
+    name: "Certificate Manager"
+    description: "Google Cloud Certificate Manager certificates and maps"
+
+  cloud-armor:
+    dependencies: [projects]
+    path_pattern: "live/**/cloud-armor/**"
+    emoji: "🛡️"
+    name: "Cloud Armor"
+    description: "Google Cloud Armor security policies"
+
+  # Storage
+  buckets:
+    dependencies: [projects, project-iam-service-accounts]
+    path_pattern: "live/**/buckets/**"
+    template_path: "_common/templates/cloud_storage"
+    emoji: "🪣"
+    name: "Buckets"
+    description: "Cloud Storage buckets"
+
+  # Compute resources
+  instance-template:
+    dependencies:
+      [
+        vpc-network,
+        external-ips,
+        secrets,
+        buckets,
+        project-iam-service-accounts,
+      ]
+    path_pattern: "live/**/compute/**"
+    exclude_pattern:
+      - "live/**/compute/**/vm/**"
+      - "live/**/compute/**/iam-bindings/**"
+    template_path: "_common/templates/instance_template"
+    emoji: "🏗️"
+    name: "Instance Template"
+    description: "Instance Templates"
+
+  compute:
+    dependencies: [instance-template]
+    path_pattern: "live/**/compute/**/vm/**"
+    template_path: "_common/templates/compute_instance"
+    emoji: "💻"
+    name: "Compute"
+    description: "Compute Engine instances"
+
+  # GKE resources
+  gke:
+    dependencies:
+      [
+        vpc-network,
+        secrets,
+        internal-ips,
+        external-ips,
+        firewall-rules,
+        cloud-nat,
+      ]
+    path_pattern: "live/**/gke/cluster-*/**"
+    exclude_pattern:
+      - "live/**/gke/*/bootstrap-*/**"
+      - "live/**/gke/*/iam-bindings/**"
+    template_path: "_common/templates/gke"
+    emoji: "☸️"
+    name: "GKE"
+    description: "GKE clusters"
+
+  bootstrap:
+    dependencies: [gke, iam-workload-identity, project-iam-bindings]
+    path_pattern: "live/**/gke/*/bootstrap-*/**"
+    template_path: "_common/templates/bootstrap"
+    emoji: "🔧"
+    name: "Bootstrap"
+    description: "ArgoCD bootstrap (manual deployment)"
+    manual_only: true
+
+  # Cloud SQL
+  cloud-sql:
+    dependencies: [vpc-network, secrets]
+    path_pattern: "live/**/cloud-sql/**"
+    template_path: "_common/templates/cloud_sql"
+    emoji: "🗄️"
+    name: "Cloud SQL"
+    description: "Cloud SQL instances"
+
+  # Cloud Run
+  cloud-run:
+    dependencies: [projects, vpc-network, secrets]
+    path_pattern: "live/**/cloud-run/**"
+    template_path: "_common/templates/cloud-run"
+    emoji: "🏃"
+    name: "Cloud Run"
+    description: "Cloud Run services"
+
+  # Load Balancer
+  load-balancer:
+    dependencies: [projects, cloud-run, certificate-manager, cloud-armor]
+    path_pattern: "live/**/load-balancer/**"
+    emoji: "⚖️"
+    name: "Load Balancer"
+    description: "HTTP(S) Load Balancers with serverless NEGs"
+
+  # Cloud DNS
+  cloud-dns:
+    dependencies: [projects]
+    path_pattern: "live/**/cloud-dns/**"
+    exclude_pattern: "live/**/cloud-dns/peering/**"
+    template_path: "_common/templates/cloud_dns"
+    emoji: "🏷️"
+    name: "Cloud DNS"
+    description: "Cloud DNS zones"
+
+  cloud-dns-peering:
+    dependencies: [cloud-dns]
+    path_pattern: "live/**/cloud-dns/peering/**"
+    template_path: "_common/templates/cloud_dns_peering"
+    emoji: "🔁"
+    name: "Cloud DNS Peering"
+    description: "Cloud DNS peering zones"
+
+  # BigQuery
+  bigquery:
+    dependencies: [projects]
+    path_pattern: "live/**/bigquery/**"
+    template_path: "_common/templates/bigquery"
+    emoji: "📊"
+    name: "BigQuery"
+    description: "BigQuery datasets"
+
+  # Artifact Registry
+  artifact-registry:
+    dependencies: [projects]
+    path_pattern: "live/**/artifact-registry/**"
+    template_path: "_common/templates/artifact_registry"
+    emoji: "📦"
+    name: "Artifact Registry"
+    description: "Container and artifact registries"

@@ -13,6 +13,12 @@ locals {
     environment = "development"
   }
 
+  # GKE security group for RBAC
+  gke_security_group = "gke-security-groups@example.com"
+
+  # DNS forward domain for this environment
+  forward_domain = "dev.example.io"
+
   # Environment-specific settings
   env_settings = {
     deletion_protection = false
