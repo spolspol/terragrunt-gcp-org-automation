@@ -930,9 +930,37 @@ class IncludeResolver:
                     return self._resolve_path(raw_path)
         return None
 
+    def find_exposed_includes(self) -> Dict[str, Path]:
+        """Return ``{name: resolved_path}`` for includes with ``expose = true``.
+
+        Excludes ``root`` and ``base`` (handled separately) and the template
+        (has ``merge_strategy = "deep"``).
+        """
+        result: Dict[str, Path] = {}
+        skip = {"root", "base"}
+        for name, block_list in self.include_blocks.items():
+            if name in skip:
+                continue
+            blocks = block_list if isinstance(block_list, list) else [block_list]
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("merge_strategy") == "deep":
+                    continue  # already handled as template
+                if block.get("expose") is True:
+                    raw_path = block.get("path", "")
+                    resolved = self._resolve_path(raw_path)
+                    if resolved:
+                        result[name] = resolved
+        return result
+
     def _resolve_path(self, raw: str) -> Optional[Path]:
         """Resolve a path expression like ``${get_repo_root()}/_common/templates/x.hcl``."""
         resolved = raw
+        # Strip outer ${...} wrapper added by hcl2json
+        m = re.match(r"^\$\{(.+)\}$", resolved, re.DOTALL)
+        if m:
+            resolved = m.group(1)
         resolved = re.sub(r"\$\{get_repo_root\(\)\}", str(self.repo_root), resolved)
         resolved = re.sub(r"get_repo_root\(\)", str(self.repo_root), resolved)
         resolved = re.sub(
@@ -1033,6 +1061,8 @@ class ExpressionResolver:
         self.locals_ctx: dict = {}
         self.unresolved: List[str] = []
         self._rtc_cache: Dict[str, Any] = {}  # cache for read_terragrunt_config
+        # Extra exposed includes: {include_name: {locals dict}}
+        self.extra_includes: Dict[str, dict] = {}
 
     def set_locals_context(self, ctx: dict) -> None:
         self.locals_ctx = ctx
@@ -1207,26 +1237,32 @@ class ExpressionResolver:
             return [self._resolve_expr(p.strip()) for p in parts]
 
         # ── Simple references (anchored to full expression) ──────────────────
-        # include.base.locals.X.Y... (with optional [index] suffix)
-        m = re.match(r"^include\.base\.locals\.([\w.]+)(.*)$", e)
+        # include.<name>.locals.X.Y... (with optional [index] suffix)
+        m = re.match(r"^include\.(\w+)\.locals\.([\w.]+)(.*)$", e)
         if m:
-            suffix = m.group(2).strip()
-            if not suffix or suffix.startswith("["):
-                val = self._dot_lookup(self.base_locals, m.group(1))
-                if suffix:
-                    idx_m = re.match(r"^\[(.+?)\](.*)", suffix)
-                    if idx_m and isinstance(val, (list, dict)):
-                        idx_expr = idx_m.group(1).strip()
-                        idx_val = self._resolve_expr(idx_expr)
-                        if isinstance(idx_val, int) and isinstance(val, list):
-                            if 0 <= idx_val < len(val):
-                                return val[idx_val]
-                        elif isinstance(idx_val, str) and isinstance(val, dict):
-                            if idx_val in val:
-                                return val[idx_val]
-                return val
-            # suffix contains operators (==, !=, ?) — fall through to
-            # comparison/ternary handlers below
+            inc_name, dotted, suffix = m.group(1), m.group(2), m.group(3).strip()
+            # Pick the right context dict
+            if inc_name == "base":
+                ctx = self.base_locals
+            else:
+                ctx = self.extra_includes.get(inc_name)
+            if ctx is not None:
+                if not suffix or suffix.startswith("["):
+                    val = self._dot_lookup(ctx, dotted)
+                    if suffix:
+                        idx_m = re.match(r"^\[(.+?)\](.*)", suffix)
+                        if idx_m and isinstance(val, (list, dict)):
+                            idx_expr = idx_m.group(1).strip()
+                            idx_val = self._resolve_expr(idx_expr)
+                            if isinstance(idx_val, int) and isinstance(val, list):
+                                if 0 <= idx_val < len(val):
+                                    return val[idx_val]
+                            elif isinstance(idx_val, str) and isinstance(val, dict):
+                                if idx_val in val:
+                                    return val[idx_val]
+                    return val
+                # suffix contains operators (==, !=, ?) — fall through to
+                # comparison/ternary handlers below
 
         # dependency.X.outputs.Y (with optional [index] or .subkey)
         m = re.match(r"^dependency\.([\w-]+)\.outputs\.(\w+)(.*)$", e)
@@ -1301,6 +1337,19 @@ class ExpressionResolver:
         m = re.match(r"merge\((.+)\)$", e, re.DOTALL)
         if m:
             return self._resolve_merge(m.group(1).strip())
+
+        # format(fmt, arg1, arg2, ...) — Terraform sprintf
+        m = re.match(r"format\((.+)\)$", e, re.DOTALL)
+        if m:
+            parts = self._split_top_level(m.group(1).strip())
+            if parts:
+                fmt_val = self._resolve_expr(parts[0].strip())
+                if isinstance(fmt_val, str):
+                    args = [self._resolve_expr(p.strip()) for p in parts[1:]]
+                    try:
+                        return fmt_val % tuple(args)
+                    except (TypeError, ValueError):
+                        pass
 
         # lookup(map, key, default)
         m = re.match(r"lookup\((.+)\)$", e, re.DOTALL)
@@ -1910,7 +1959,7 @@ class ExpressionResolver:
             if not line or line.startswith("#") or line.startswith("//"):
                 i += 1
                 continue
-            m = re.match(r'(\w+)\s*=\s*(.*)', line)
+            m = re.match(r'([\w-]+)\s*=\s*(.*)', line)
             if not m:
                 i += 1
                 continue
@@ -2029,6 +2078,21 @@ class FullConfigRenderer:
             merged, derived, labels, dep_resolver, self.resource_path,
             repo_root=self.repo_root,
         )
+
+        # Resolve exposed includes (compute_common, secrets_common, etc.)
+        exposed = include_resolver.find_exposed_includes()
+        for inc_name, inc_path in exposed.items():
+            try:
+                inc_parsed = Hcl2JsonParser.parse(str(inc_path))
+                inc_blocks = Hcl2JsonParser.extract_blocks(inc_parsed)
+                inc_expr = ExpressionResolver(
+                    merged, derived, labels, dep_resolver, self.resource_path,
+                    repo_root=self.repo_root,
+                )
+                inc_locals = inc_expr.resolve_locals(inc_blocks["locals"])
+                expr_resolver.extra_includes[inc_name] = inc_locals
+            except Exception:
+                pass  # skip includes that fail to parse
 
         # Resolve resource locals
         resource_locals = expr_resolver.resolve_locals(resource_blocks["locals"])
