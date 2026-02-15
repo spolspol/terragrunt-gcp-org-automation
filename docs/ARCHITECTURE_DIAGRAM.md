@@ -5,13 +5,13 @@ This document provides a comprehensive visual representation of the GCP infrastr
 ## Overview
 
 The infrastructure implements a hierarchical architecture with:
-- **Organizational Structure**: GCP Organization with folder hierarchy
-- **Environment Separation**: Development, perimeter, and production environments
-- **Network Architecture**: Fully private VPC with egress-only internet access via NAT
-- **VPN Access**: Users connect to private resources exclusively through a hub VPN Gateway
-- **Compute Resources**: GKE clusters, VMs, and SQL Server
-- **GitOps Platform**: ArgoCD for continuous delivery
-- **Security Components**: Secret Manager, IAM bindings, and firewall rules
+- **Organizational Structure**: GCP Organization → Folders (Bootstrap, Hub, Development) → Projects
+- **Hub Services**: VPN gateway, centralised DNS, network connectivity, and PKI
+- **Platform (dp-dev-01)**: GKE clusters, VMs, SQL Server, ArgoCD — fully private, VPN-only access
+- **Functions (fn-dev-01)**: Cloud Run services, Load Balancer, Cloud Armor, PostgreSQL — serverless pattern
+- **Network Architecture**: Fully private VPCs with egress-only internet access via Cloud NAT
+- **VPN Access**: Users connect to all development projects via hub VPN Gateway with VPC peering
+- **Security Components**: Secret Manager, IAM bindings, firewall rules, and Certificate Authority
 
 ## Visual Conventions
 
@@ -42,7 +42,7 @@ graph TB
 
         %% Bootstrap
         subgraph Bootstrap["<b>📁 Bootstrap Folder</b>"]
-            subgraph BootstrapProj["<b>🗂️ org-automation Project</b>"]
+            subgraph BootstrapProj["<b>🗂️ org-automation</b>"]
                 StateStorage("<b>📦 Terraform State<br/>org-tofu-state bucket</b>")
                 OrgSA("<b>🔑 Org Service Account<br/>tofu-sa-org@</b>")
             end
@@ -50,16 +50,26 @@ graph TB
 
         %% Hub
         subgraph Hub["<b>📁 Hub Folder</b>"]
-            subgraph VPNGateway["<b>🗂️ vpn-gateway Project</b>"]
+            subgraph VPNGateway["<b>🗂️ vpn-gateway</b>"]
                 VPNServer("<b>VPN Server</b>")
                 VPNVPC("<b>VPN Gateway VPC</b>")
-                VPCPeering("<b>VPC Peering</b>")
+            end
+            subgraph DNSHubProj["<b>🗂️ dns-hub</b>"]
+                DNSZones("<b>Cloud DNS Zones</b>")
+            end
+            subgraph NetworkHubProj["<b>🗂️ network-hub</b>"]
+                NCC("<b>Network Connectivity</b>")
+            end
+            subgraph PKIHubProj["<b>🗂️ pki-hub</b>"]
+                CAS("<b>Certificate Authority</b>")
             end
         end
 
         %% Development
         subgraph Development["<b>📁 Development Folder</b>"]
-            subgraph DevProj["<b>🗂️ dp-dev-01 Project (Fully Private)</b>"]
+
+            %% ── Platform sub-environment ──────────────────────
+            subgraph DevProj["<b>🗂️ dp-dev-01 — Platform (Fully Private)</b>"]
 
                 %% Network
                 subgraph Network["<b>🌐 Network Layer (Private Only)</b>"]
@@ -112,6 +122,33 @@ graph TB
                     CloudSQL("<b>Cloud SQL Instances</b>")
                 end
             end
+
+            %% ── Functions sub-environment ─────────────────────
+            subgraph FnProj["<b>🗂️ fn-dev-01 — Functions (Fully Private)</b>"]
+
+                subgraph FnNetwork["<b>🌐 Network</b>"]
+                    FnVPC("<b>VPC Network</b>")
+                    FnNAT("<b>Cloud NAT</b>")
+                end
+
+                subgraph FnServerless["<b>☁️ Serverless</b>"]
+                    FnCloudArmor("<b>Cloud Armor WAF</b>")
+                    FnLB("<b>Load Balancer</b>")
+                    FnCloudRun("<b>Cloud Run<br/>api-service · webhook-handler</b>")
+                    FnCloudArmor ==> FnLB
+                    FnLB ==> FnCloudRun
+                end
+
+                subgraph FnData["<b>💾 Data</b>"]
+                    FnPostgres("<b>Cloud SQL<br/>PostgreSQL</b>")
+                    FnArtifact("<b>Artifact Registry</b>")
+                end
+
+                subgraph FnSecurity["<b>🔒 Security</b>"]
+                    FnSecrets("<b>Secrets</b>")
+                    FnSA("<b>Service Accounts</b>")
+                end
+            end
         end
     end
 
@@ -122,15 +159,18 @@ graph TB
 
     %% 🟢 Green — private peering
     VPNVPC ==>|"<b>VPC Peering</b>"| VPC
+    VPNVPC ==>|"<b>VPC Peering</b>"| FnVPC
 
     %% 🔵 Blue — internet egress
     NATExtIP ==>|"<b>egress only</b>"| Internet
+    FnNAT ==>|"<b>egress</b>"| Internet
 
     %% 🟢 Green — internal flows
     ArgoCD ==>|"<b>pull via NAT</b>"| CloudNAT
     GitHub -.->|"<b>synced via egress</b>"| ArgoCD
     VirtualMachines ==> CloudNAT
     GKE ==> CloudNAT
+    FnVPC ==> FnNAT
 
     %% 🟢 Green — data / security flows
     Secrets -.-> ArgoCD
@@ -139,53 +179,66 @@ graph TB
     Firewall ==> Network
     StateStorage -.-> Development
     CloudSQL -.-> VirtualMachines
+    FnCloudRun -.-> FnPostgres
+    FnSecrets -.-> FnCloudRun
 
     %% ── Node styles ─────────────────────────────────────────────
     classDef internet fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#000
     classDef public fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#000
     classDef bootstrap fill:#b2dfdb,stroke:#00695c,stroke-width:3px,font-weight:bold,color:#000
     classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#000
-    classDef network fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
-    classDef compute fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#000
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,font-weight:bold,color:#000
+    classDef compute fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
+    classDef serverless fill:#ffccbc,stroke:#d84315,stroke-width:3px,font-weight:bold,color:#000
     classDef security fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,font-weight:bold,color:#000
     classDef storage fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,font-weight:bold,color:#000
 
     class Internet,GitHub internet
     class Users,VPNServer public
     class StateStorage,OrgSA bootstrap
-    class VPNVPC,VPCPeering hub
-    class VPC,DMZ,Private,GKESub,Router,CloudNAT,NATExtIP network
+    class VPNVPC,DNSZones,NCC,CAS hub
+    class VPC,DMZ,Private,GKESub,Router,CloudNAT,NATExtIP,FnVPC,FnNAT network
     class GKE,ArgoCD,LinuxVM,WebVM,SQLVM compute
-    class Secrets,IAM,Firewall security
-    class GCS,BigQuery,CloudSQL storage
+    class FnCloudRun,FnLB,FnCloudArmor serverless
+    class Secrets,IAM,Firewall,FnSecrets,FnSA security
+    class GCS,BigQuery,CloudSQL,FnPostgres,FnArtifact storage
 
     %% ── Link styles (by index) ──────────────────────────────────
-    %% 0-4: internal structural (green)
+    %% 0-4: dp-dev-01 internal structural (green)
     linkStyle 0 stroke:#2e7d32,stroke-width:3px
     linkStyle 1 stroke:#2e7d32,stroke-width:3px
     linkStyle 2 stroke:#2e7d32,stroke-width:3px
     linkStyle 3 stroke:#2e7d32,stroke-width:3px
     linkStyle 4 stroke:#2e7d32,stroke-width:3px
-    %% 5-6: VPN / public edge (red)
-    linkStyle 5 stroke:#c62828,stroke-width:3px
-    linkStyle 6 stroke:#c62828,stroke-width:3px
-    %% 7: VPC peering (green)
-    linkStyle 7 stroke:#2e7d32,stroke-width:3px
-    %% 8: NAT → Internet (blue)
-    linkStyle 8 stroke:#1565c0,stroke-width:3px
-    %% 9-12: internal egress (green)
+    %% 5-6: fn-dev-01 serverless chain (green)
+    linkStyle 5 stroke:#2e7d32,stroke-width:3px
+    linkStyle 6 stroke:#2e7d32,stroke-width:3px
+    %% 7-8: VPN / public edge (red)
+    linkStyle 7 stroke:#c62828,stroke-width:3px
+    linkStyle 8 stroke:#c62828,stroke-width:3px
+    %% 9-10: VPC peering (green)
     linkStyle 9 stroke:#2e7d32,stroke-width:3px
-    %% 10: GitHub sync (blue — comes from internet)
-    linkStyle 10 stroke:#1565c0,stroke-width:3px
-    linkStyle 11 stroke:#2e7d32,stroke-width:3px
-    linkStyle 12 stroke:#2e7d32,stroke-width:3px
-    %% 13-18: internal data/security (green)
-    linkStyle 13 stroke:#2e7d32,stroke-width:2px
-    linkStyle 14 stroke:#2e7d32,stroke-width:2px
-    linkStyle 15 stroke:#2e7d32,stroke-width:2px
+    linkStyle 10 stroke:#2e7d32,stroke-width:3px
+    %% 11-12: NAT → Internet egress (blue)
+    linkStyle 11 stroke:#1565c0,stroke-width:3px
+    linkStyle 12 stroke:#1565c0,stroke-width:3px
+    %% 13: ArgoCD pull (green)
+    linkStyle 13 stroke:#2e7d32,stroke-width:3px
+    %% 14: GitHub sync (blue — from internet)
+    linkStyle 14 stroke:#1565c0,stroke-width:3px
+    %% 15-17: internal egress (green)
+    linkStyle 15 stroke:#2e7d32,stroke-width:3px
     linkStyle 16 stroke:#2e7d32,stroke-width:3px
-    linkStyle 17 stroke:#2e7d32,stroke-width:2px
+    linkStyle 17 stroke:#2e7d32,stroke-width:3px
+    %% 18-25: data / security flows (green, thinner)
     linkStyle 18 stroke:#2e7d32,stroke-width:2px
+    linkStyle 19 stroke:#2e7d32,stroke-width:2px
+    linkStyle 20 stroke:#2e7d32,stroke-width:2px
+    linkStyle 21 stroke:#2e7d32,stroke-width:3px
+    linkStyle 22 stroke:#2e7d32,stroke-width:2px
+    linkStyle 23 stroke:#2e7d32,stroke-width:2px
+    linkStyle 24 stroke:#2e7d32,stroke-width:2px
+    linkStyle 25 stroke:#2e7d32,stroke-width:2px
 
     %% ── Subgraph styles ─────────────────────────────────────────
     %% Organisation
@@ -200,17 +253,27 @@ graph TB
     %% Projects — cool indigo
     style BootstrapProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
     style VPNGateway fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
+    style DNSHubProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
+    style NetworkHubProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
+    style PKIHubProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
     style DevProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
+    style FnProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
 
-    %% Resource groups inside project
-    style Network fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style Subnets fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
-    style NATGateway fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style Compute fill:#f1f8e9,stroke:#33691e,stroke-width:2px
-    style GKECluster fill:#dcedc8,stroke:#33691e,stroke-width:2px
-    style VirtualMachines fill:#dcedc8,stroke:#33691e,stroke-width:2px
-    style Security fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    style Storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    %% dp-dev-01 resource groups
+    style Network fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+    style Subnets fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#000
+    style NATGateway fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    style Compute fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,color:#000
+    style GKECluster fill:#b3e5fc,stroke:#0277bd,stroke-width:2px,color:#000
+    style VirtualMachines fill:#b3e5fc,stroke:#0277bd,stroke-width:2px,color:#000
+    style Security fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    style Storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
+
+    %% fn-dev-01 resource groups
+    style FnNetwork fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+    style FnServerless fill:#fbe9e7,stroke:#d84315,stroke-width:2px,color:#000
+    style FnData fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style FnSecurity fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
 ```
 
 ## Detailed Component Views
@@ -270,8 +333,8 @@ flowchart LR
     linkStyle 6 stroke:#2e7d32,stroke-width:3px
     linkStyle 7 stroke:#1565c0,stroke-width:3px
 
-    style VPCDetail fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
-    style EgressPath fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    style VPCDetail fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#000
+    style EgressPath fill:#fff3e0,stroke:#e65100,stroke-width:3px,color:#000
 ```
 
 ### GitOps Architecture Detail
@@ -323,10 +386,10 @@ flowchart TB
     linkStyle 4 stroke:#2e7d32,stroke-width:3px
     linkStyle 5 stroke:#1565c0,stroke-width:3px
 
-    style GitOpsStack fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
-    style Prerequisites fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style ArgoComponents fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
-    style Applications fill:#dcedc8,stroke:#33691e,stroke-width:2px
+    style GitOpsStack fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#000
+    style Prerequisites fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    style ArgoComponents fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#000
+    style Applications fill:#dcedc8,stroke:#33691e,stroke-width:2px,color:#000
 ```
 
 ### Security Layer Detail
@@ -372,10 +435,10 @@ flowchart TD
     linkStyle 1 stroke:#7b1fa2,stroke-width:2px
     linkStyle 2 stroke:#7b1fa2,stroke-width:3px
 
-    style SecurityComponents fill:#fce4ec,stroke:#c2185b,stroke-width:3px
-    style SecretsManagement fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    style AccessControl fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style NetworkSecurity fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style SecurityComponents fill:#fce4ec,stroke:#c2185b,stroke-width:3px,color:#000
+    style SecretsManagement fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    style AccessControl fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style NetworkSecurity fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
 ```
 
 ## Resource Dependency Graph
@@ -428,10 +491,10 @@ graph LR
 
     linkStyle default stroke:#2e7d32,stroke-width:3px
 
-    style Foundation fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
-    style Infrastructure fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
-    style Resources fill:#fff3e0,stroke:#e65100,stroke-width:3px
-    style Platform fill:#dcedc8,stroke:#33691e,stroke-width:3px
+    style Foundation fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#000
+    style Infrastructure fill:#e3f2fd,stroke:#1565c0,stroke-width:3px,color:#000
+    style Resources fill:#fff3e0,stroke:#e65100,stroke-width:3px,color:#000
+    style Platform fill:#dcedc8,stroke:#33691e,stroke-width:3px,color:#000
 ```
 
 ## IP Allocation Overview
@@ -478,28 +541,35 @@ sequenceDiagram
 ## Key Features Highlighted
 
 ### 1. **Hierarchical Organization**
-- Clear folder structure from Organization to Projects
+- Clear folder structure: Organization → Folders → Projects → Resources
 - Environment separation (Development/Perimeter/Production)
-- Logical resource grouping
+- Sub-environments: **Platform** (dp-dev-01) for GKE/VMs, **Functions** (fn-dev-01) for Cloud Run
 
-### 2. **Network Security**
-- Fully private VPC — no public ingress to dp-dev-01
+### 2. **Hub Services**
+- **vpn-gateway**: VPN server and VPC peering to all development projects
+- **dns-hub**: Centralised Cloud DNS zone management
+- **network-hub**: Network connectivity centre
+- **pki-hub**: Certificate Authority Service for internal PKI
+
+### 3. **Network Security**
+- Fully private VPCs — no public ingress to development projects
 - User access exclusively via VPN through hub VPN Gateway with VPC peering
 - Egress-only internet access through Cloud NAT for outbound traffic (image pulls, updates)
 - Firewall rules and Private Service Access
 
-### 3. **GitOps Integration**
-- ArgoCD for continuous delivery
+### 4. **GitOps Integration**
+- ArgoCD for continuous delivery (dp-dev-01)
 - External Secrets Operator
-- GitHub repository synchronization
+- GitHub repository synchronisation
 
-### 4. **Comprehensive Monitoring**
-- State tracking in GCS
-- Secret management
-- IAM controls
+### 5. **Serverless Pattern (fn-dev-01)**
+- Cloud Run services behind Load Balancer with Cloud Armor WAF
+- Cloud SQL PostgreSQL for persistent data
+- Artifact Registry for container images
+- Dedicated service accounts for deployment and runtime
 
-### 5. **Scalability**
-- Support for multiple GKE clusters
+### 6. **Scalability**
+- Support for multiple GKE clusters and Cloud Run services
 - Reserved IP ranges for growth
 - Modular Terragrunt configuration
 
