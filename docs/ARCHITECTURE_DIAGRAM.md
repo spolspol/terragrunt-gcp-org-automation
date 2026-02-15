@@ -8,9 +8,9 @@ The infrastructure implements a hierarchical architecture with:
 - **Organizational Structure**: GCP Organization → Folders (Bootstrap, Hub, Development) → Projects
 - **Hub Services**: VPN gateway, centralised DNS, network connectivity, and PKI
 - **Platform (dp-dev-01)**: GKE clusters, VMs, SQL Server, ArgoCD — fully private, VPN-only access
-- **Functions (fn-dev-01)**: Cloud Run services, Load Balancer, Cloud Armor, PostgreSQL — serverless pattern
+- **Functions (fn-dev-01)**: Cloud Run services behind public Load Balancer with Cloud Armor WAF — clients connect directly via HTTPS (no VPN)
 - **Network Architecture**: Fully private VPCs with egress-only internet access via Cloud NAT
-- **VPN Access**: Users connect to all development projects via hub VPN Gateway with VPC peering
+- **VPN Access**: Users connect to dp-dev-01 via hub VPN Gateway with VPC peering; fn-dev-01 clients use public LB
 - **Security Components**: Secret Manager, IAM bindings, firewall rules, and Certificate Authority
 
 ## Visual Conventions
@@ -124,7 +124,7 @@ graph TB
             end
 
             %% ── Functions sub-environment ─────────────────────
-            subgraph FnProj["<b>🗂️ fn-dev-01 — Functions (Fully Private)</b>"]
+            subgraph FnProj["<b>🗂️ fn-dev-01 — Functions (Public LB)</b>"]
 
                 subgraph FnNetwork["<b>🌐 Network</b>"]
                     FnVPC("<b>VPC Network</b>")
@@ -157,9 +157,11 @@ graph TB
     Users ==>|"<b>VPN tunnel</b>"| VPNServer
     VPNServer ==> VPNVPC
 
-    %% 🟢 Green — private peering
+    %% 🟢 Green — private peering (dp-dev-01 only)
     VPNVPC ==>|"<b>VPC Peering</b>"| VPC
-    VPNVPC ==>|"<b>VPC Peering</b>"| FnVPC
+
+    %% 🔵 Blue — clients to fn-dev-01 LB (public, no VPN)
+    Users ==>|"<b>HTTPS</b>"| FnLB
 
     %% 🔵 Blue — internet egress
     NATExtIP ==>|"<b>egress only</b>"| Internet
@@ -199,7 +201,8 @@ graph TB
     class VPNVPC,DNSZones,NCC,CAS hub
     class VPC,DMZ,Private,GKESub,Router,CloudNAT,NATExtIP,FnVPC,FnNAT network
     class GKE,ArgoCD,LinuxVM,WebVM,SQLVM compute
-    class FnCloudRun,FnLB,FnCloudArmor serverless
+    class FnCloudRun,FnCloudArmor serverless
+    class FnLB public
     class Secrets,IAM,Firewall,FnSecrets,FnSA security
     class GCS,BigQuery,CloudSQL,FnPostgres,FnArtifact storage
 
@@ -216,9 +219,10 @@ graph TB
     %% 7-8: VPN / public edge (red)
     linkStyle 7 stroke:#c62828,stroke-width:3px
     linkStyle 8 stroke:#c62828,stroke-width:3px
-    %% 9-10: VPC peering (green)
+    %% 9: VPC peering to dp-dev-01 (green)
     linkStyle 9 stroke:#2e7d32,stroke-width:3px
-    linkStyle 10 stroke:#2e7d32,stroke-width:3px
+    %% 10: Clients → fn-dev-01 LB (blue — internet)
+    linkStyle 10 stroke:#1565c0,stroke-width:3px
     %% 11-12: NAT → Internet egress (blue)
     linkStyle 11 stroke:#1565c0,stroke-width:3px
     linkStyle 12 stroke:#1565c0,stroke-width:3px
@@ -563,10 +567,10 @@ sequenceDiagram
 - GitHub repository synchronisation
 
 ### 5. **Serverless Pattern (fn-dev-01)**
-- Cloud Run services behind Load Balancer with Cloud Armor WAF
-- Cloud SQL PostgreSQL for persistent data
-- Artifact Registry for container images
-- Dedicated service accounts for deployment and runtime
+- Public-facing Load Balancer — clients connect directly via HTTPS (no VPN required)
+- Cloud Armor WAF protects the LB from malicious traffic
+- Cloud Run services, Cloud SQL PostgreSQL, Artifact Registry
+- Egress-only internet access via Cloud NAT for outbound calls
 
 ### 6. **Scalability**
 - Support for multiple GKE clusters and Cloud Run services
