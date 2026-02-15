@@ -23,7 +23,7 @@ The infrastructure implements a hierarchical architecture with:
 
 | Shape | Meaning |
 |:------|:--------|
-| **(Stadium/Pill)** | All nodes use maximum-rounded pill shapes with bold borders |
+| **(Rounded rectangle)** | All nodes use rounded shapes with bold borders |
 | **Bold text** | All labels use bold text for readability |
 
 ## Complete Infrastructure Architecture
@@ -32,9 +32,9 @@ The infrastructure implements a hierarchical architecture with:
 graph TB
     %% ── External ────────────────────────────────────────────────
     subgraph External["<b>🌐 External Environment</b>"]
-        Internet(["<b>Internet</b>"])
-        GitHub(["<b>GitHub Repositories</b>"])
-        Users(["<b>Users / Clients</b>"])
+        Internet("<b>Internet</b>")
+        GitHub("<b>GitHub Repositories</b>")
+        Users("<b>Users / Clients</b>")
     end
 
     %% ── GCP Organization ────────────────────────────────────────
@@ -43,17 +43,17 @@ graph TB
         %% Bootstrap
         subgraph Bootstrap["<b>📁 Bootstrap Folder</b>"]
             subgraph BootstrapProj["<b>🗂️ org-automation Project</b>"]
-                StateStorage(["<b>📦 Terraform State<br/>org-tofu-state bucket</b>"])
-                OrgSA(["<b>🔑 Org Service Account<br/>tofu-sa-org@</b>"])
+                StateStorage("<b>📦 Terraform State<br/>org-tofu-state bucket</b>")
+                OrgSA("<b>🔑 Org Service Account<br/>tofu-sa-org@</b>")
             end
         end
 
         %% Hub
         subgraph Hub["<b>📁 Hub Folder</b>"]
             subgraph VPNGateway["<b>🗂️ vpn-gateway Project</b>"]
-                VPNServer(["<b>VPN Server</b>"])
-                VPNVPC(["<b>VPN Gateway VPC</b>"])
-                VPCPeering(["<b>VPC Peering</b>"])
+                VPNServer("<b>VPN Server</b>")
+                VPNVPC("<b>VPN Gateway VPC</b>")
+                VPCPeering("<b>VPC Peering</b>")
             end
         end
 
@@ -63,18 +63,18 @@ graph TB
 
                 %% Network
                 subgraph Network["<b>🌐 Network Layer (Private Only)</b>"]
-                    VPC(["<b>VPC Network<br/>10.132.0.0/16</b>"])
+                    VPC("<b>VPC Network<br/>10.132.0.0/16</b>")
 
                     subgraph Subnets["<b>Subnet Configuration</b>"]
-                        DMZ(["<b>DMZ: 10.132.0.0/21</b>"])
-                        Private(["<b>Private: 10.132.8.0/21</b>"])
-                        GKESub(["<b>GKE: 10.132.64.0/18</b>"])
+                        DMZ("<b>DMZ: 10.132.0.0/21</b>")
+                        Private("<b>Private: 10.132.8.0/21</b>")
+                        GKESub("<b>GKE: 10.132.64.0/18</b>")
                     end
 
                     subgraph NATGateway["<b>NAT Gateway (Egress Only)</b>"]
-                        Router(["<b>Cloud Router<br/>BGP ASN: 64514</b>"])
-                        CloudNAT(["<b>Cloud NAT</b>"])
-                        NATExtIP(["<b>NAT External IP</b>"])
+                        Router("<b>Cloud Router<br/>BGP ASN: 64514</b>")
+                        CloudNAT("<b>Cloud NAT</b>")
+                        NATExtIP("<b>NAT External IP</b>")
                         Router ==> CloudNAT
                         CloudNAT ==> NATExtIP
                     end
@@ -86,30 +86,30 @@ graph TB
                 %% Compute
                 subgraph Compute["<b>💻 Compute Resources</b>"]
                     subgraph GKECluster["<b>GKE Infrastructure</b>"]
-                        GKE(["<b>GKE Cluster<br/>cluster-01</b>"])
-                        ArgoCD(["<b>ArgoCD Bootstrap</b>"])
+                        GKE("<b>GKE Cluster<br/>cluster-01</b>")
+                        ArgoCD("<b>ArgoCD Bootstrap</b>")
                         GKE ==> ArgoCD
                     end
 
                     subgraph VirtualMachines["<b>Virtual Machines</b>"]
-                        LinuxVM(["<b>Linux Server VM</b>"])
-                        WebVM(["<b>Web Server VM</b>"])
-                        SQLVM(["<b>SQL Server VM</b>"])
+                        LinuxVM("<b>Linux Server VM</b>")
+                        WebVM("<b>Web Server VM</b>")
+                        SQLVM("<b>SQL Server VM</b>")
                     end
                 end
 
                 %% Security
                 subgraph Security["<b>🔒 Security Components</b>"]
-                    Secrets(["<b>Secret Manager<br/>13 secrets</b>"])
-                    IAM(["<b>IAM Bindings</b>"])
-                    Firewall(["<b>Firewall Rules</b>"])
+                    Secrets("<b>Secret Manager<br/>13 secrets</b>")
+                    IAM("<b>IAM Bindings</b>")
+                    Firewall("<b>Firewall Rules</b>")
                 end
 
                 %% Storage
                 subgraph Storage["<b>💾 Storage Services</b>"]
-                    GCS(["<b>Cloud Storage Buckets</b>"])
-                    BigQuery(["<b>BigQuery Datasets</b>"])
-                    CloudSQL(["<b>Cloud SQL Instances</b>"])
+                    GCS("<b>Cloud Storage Buckets</b>")
+                    BigQuery("<b>BigQuery Datasets</b>")
+                    CloudSQL("<b>Cloud SQL Instances</b>")
                 end
             end
         end
@@ -141,14 +141,14 @@ graph TB
     CloudSQL -.-> VirtualMachines
 
     %% ── Node styles ─────────────────────────────────────────────
-    classDef internet fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#0d47a1
-    classDef public fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#b71c1c
-    classDef bootstrap fill:#b2dfdb,stroke:#00695c,stroke-width:3px,font-weight:bold,color:#004d40
-    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#bf360c
-    classDef network fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#1b5e20
-    classDef compute fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#1b5e20
-    classDef security fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,font-weight:bold,color:#880e4f
-    classDef storage fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,font-weight:bold,color:#4a148c
+    classDef internet fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#000
+    classDef public fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#000
+    classDef bootstrap fill:#b2dfdb,stroke:#00695c,stroke-width:3px,font-weight:bold,color:#000
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#000
+    classDef network fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
+    classDef compute fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#000
+    classDef security fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,font-weight:bold,color:#000
+    classDef storage fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,font-weight:bold,color:#000
 
     class Internet,GitHub internet
     class Users,VPNServer public
@@ -189,18 +189,18 @@ graph TB
 
     %% ── Subgraph styles ─────────────────────────────────────────
     %% Organisation
-    style GCPOrg fill:#fafafa,stroke:#424242,stroke-width:3px,color:#212121
-    style External fill:#ffebee,stroke:#c62828,stroke-width:3px,color:#b71c1c
+    style GCPOrg fill:#fafafa,stroke:#424242,stroke-width:3px,color:#000
+    style External fill:#ffebee,stroke:#c62828,stroke-width:3px,color:#000
 
     %% Folders — warm yellow
-    style Bootstrap fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#f57f17
-    style Hub fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#f57f17
-    style Development fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#f57f17
+    style Bootstrap fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#000
+    style Hub fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#000
+    style Development fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#000
 
     %% Projects — cool indigo
-    style BootstrapProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#1a237e
-    style VPNGateway fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#1a237e
-    style DevProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#1a237e
+    style BootstrapProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
+    style VPNGateway fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
+    style DevProj fill:#e8eaf6,stroke:#3949ab,stroke-width:3px,color:#000
 
     %% Resource groups inside project
     style Network fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
@@ -219,19 +219,19 @@ graph TB
 
 ```mermaid
 flowchart LR
-    U(["<b>Users</b>"]) ==>|"<b>VPN tunnel</b>"| VPN(["<b>VPN Gateway<br/>Hub Project</b>"])
+    U("<b>Users</b>") ==>|"<b>VPN tunnel</b>"| VPN("<b>VPN Gateway<br/>Hub Project</b>")
     VPN ==>|"<b>VPC Peering</b>"| VPCDetail
 
     subgraph VPCDetail["<b>dp-dev-01 VPC (Fully Private — 10.132.0.0/16)</b>"]
         subgraph PrimaryNets["<b>Private Subnets</b>"]
-            D(["<b>DMZ<br/>10.132.0.0/21</b>"])
-            P(["<b>Private<br/>10.132.8.0/21</b>"])
-            G(["<b>GKE<br/>10.132.64.0/18</b>"])
+            D("<b>DMZ<br/>10.132.0.0/21</b>")
+            P("<b>Private<br/>10.132.8.0/21</b>")
+            G("<b>GKE<br/>10.132.64.0/18</b>")
         end
 
         subgraph SecondaryNets["<b>GKE Secondary Ranges</b>"]
-            POD(["<b>Pods<br/>10.132.128.0/21</b>"])
-            SVC(["<b>Services<br/>10.132.192.0/24</b>"])
+            POD("<b>Pods<br/>10.132.128.0/21</b>")
+            SVC("<b>Services<br/>10.132.192.0/24</b>")
         end
 
         G -.-> POD
@@ -239,20 +239,20 @@ flowchart LR
     end
 
     subgraph EgressPath["<b>Egress Only Path</b>"]
-        CR(["<b>Cloud Router</b>"])
-        CN(["<b>Cloud NAT</b>"])
-        EIP(["<b>External IP</b>"])
+        CR("<b>Cloud Router</b>")
+        CN("<b>Cloud NAT</b>")
+        EIP("<b>External IP</b>")
         CR ==> CN ==> EIP
     end
 
     PrimaryNets ==> CR
-    EIP ==>|"<b>egress only</b>"| I(["<b>Internet</b>"])
+    EIP ==>|"<b>egress only</b>"| I("<b>Internet</b>")
 
     %% Node styles
-    classDef public fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#b71c1c
-    classDef private fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#1b5e20
-    classDef internet fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#0d47a1
-    classDef egress fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#bf360c
+    classDef public fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#000
+    classDef private fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
+    classDef internet fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#000
+    classDef egress fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#000
 
     class U public
     class VPN public
@@ -280,21 +280,21 @@ flowchart LR
 flowchart TB
     subgraph GitOpsStack["<b>GitOps Platform</b>"]
         subgraph Prerequisites["<b>Prerequisites</b>"]
-            GKEC(["<b>GKE Cluster</b>"])
-            SECS(["<b>Secrets</b>"])
-            EXTIP(["<b>External IP</b>"])
+            GKEC("<b>GKE Cluster</b>")
+            SECS("<b>Secrets</b>")
+            EXTIP("<b>External IP</b>")
         end
 
         subgraph ArgoComponents["<b>ArgoCD Components</b>"]
-            ARGO(["<b>ArgoCD Core</b>"])
-            ESO(["<b>External Secrets<br/>Operator</b>"])
-            INGRESS(["<b>Ingress Controller</b>"])
+            ARGO("<b>ArgoCD Core</b>")
+            ESO("<b>External Secrets<br/>Operator</b>")
+            INGRESS("<b>Ingress Controller</b>")
         end
 
         subgraph Applications["<b>Deployed Apps</b>"]
-            APPS(["<b>Application<br/>Manifests</b>"])
-            CONFIGS(["<b>ConfigMaps</b>"])
-            DEPLOYS(["<b>Deployments</b>"])
+            APPS("<b>Application<br/>Manifests</b>")
+            CONFIGS("<b>ConfigMaps</b>")
+            DEPLOYS("<b>Deployments</b>")
         end
     end
 
@@ -304,12 +304,12 @@ flowchart TB
     EXTIP ==> INGRESS
     ARGO ==> Applications
 
-    GITHUB(["<b>GitHub Repos</b>"]) -.->|"<b>via NAT egress</b>"| ARGO
+    GITHUB("<b>GitHub Repos</b>") -.->|"<b>via NAT egress</b>"| ARGO
 
-    classDef prereq fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#bf360c
-    classDef argo fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#1b5e20
-    classDef apps fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#1b5e20
-    classDef ext fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#0d47a1
+    classDef prereq fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#000
+    classDef argo fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
+    classDef apps fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#000
+    classDef ext fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#000
 
     class GKEC,SECS,EXTIP prereq
     class ARGO,ESO,INGRESS argo
@@ -335,34 +335,34 @@ flowchart TB
 flowchart TD
     subgraph SecurityComponents["<b>Security Architecture</b>"]
         subgraph SecretsManagement["<b>Secrets Management</b>"]
-            SM(["<b>Secret Manager</b>"])
+            SM("<b>Secret Manager</b>")
             subgraph SecretTypes["<b>Secret Categories</b>"]
-                GKE_SEC(["<b>GKE Secrets<br/>• OAuth Tokens<br/>• Webhooks<br/>• Service Accounts</b>"])
-                APP_SEC(["<b>App Secrets<br/>• SSL Certs<br/>• API Keys</b>"])
-                DB_SEC(["<b>Database<br/>• Admin Password<br/>• DBA Password</b>"])
+                GKE_SEC("<b>GKE Secrets<br/>• OAuth Tokens<br/>• Webhooks<br/>• Service Accounts</b>")
+                APP_SEC("<b>App Secrets<br/>• SSL Certs<br/>• API Keys</b>")
+                DB_SEC("<b>Database<br/>• Admin Password<br/>• DBA Password</b>")
             end
             SM ==> SecretTypes
         end
 
         subgraph AccessControl["<b>Access Control</b>"]
-            IAM_BIND(["<b>IAM Bindings</b>"])
-            SA(["<b>Service Accounts</b>"])
-            RBAC(["<b>GKE RBAC</b>"])
+            IAM_BIND("<b>IAM Bindings</b>")
+            SA("<b>Service Accounts</b>")
+            RBAC("<b>GKE RBAC</b>")
         end
 
         subgraph NetworkSecurity["<b>Network Security</b>"]
-            FW(["<b>Firewall Rules</b>"])
-            PSA(["<b>Private Service<br/>Access</b>"])
-            NAT_SEC(["<b>NAT Gateway<br/>Security</b>"])
+            FW("<b>Firewall Rules</b>")
+            PSA("<b>Private Service<br/>Access</b>")
+            NAT_SEC("<b>NAT Gateway<br/>Security</b>")
         end
     end
 
     SecretsManagement -.-> AccessControl
     AccessControl ==> NetworkSecurity
 
-    classDef secrets fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,font-weight:bold,color:#880e4f
-    classDef access fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,font-weight:bold,color:#4a148c
-    classDef netsec fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#b71c1c
+    classDef secrets fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,font-weight:bold,color:#000
+    classDef access fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,font-weight:bold,color:#000
+    classDef netsec fill:#ffcdd2,stroke:#c62828,stroke-width:3px,font-weight:bold,color:#000
 
     class SM,GKE_SEC,APP_SEC,DB_SEC secrets
     class IAM_BIND,SA,RBAC access
@@ -383,17 +383,17 @@ flowchart TD
 ```mermaid
 graph LR
     subgraph Foundation["<b>Foundation</b>"]
-        ORG(["<b>Organization</b>"])
-        FOLDER(["<b>Folders</b>"])
-        PROJECT(["<b>Projects</b>"])
+        ORG("<b>Organization</b>")
+        FOLDER("<b>Folders</b>")
+        PROJECT("<b>Projects</b>")
         ORG ==> FOLDER ==> PROJECT
     end
 
     subgraph Infrastructure["<b>Infrastructure</b>"]
-        VPC_NET(["<b>VPC Network</b>"])
-        EXT_IP(["<b>External IPs</b>"])
-        ROUTER(["<b>Cloud Router</b>"])
-        NAT(["<b>Cloud NAT</b>"])
+        VPC_NET("<b>VPC Network</b>")
+        EXT_IP("<b>External IPs</b>")
+        ROUTER("<b>Cloud Router</b>")
+        NAT("<b>Cloud NAT</b>")
         PROJECT ==> VPC_NET
         VPC_NET ==> ROUTER
         ROUTER ==> NAT
@@ -401,25 +401,25 @@ graph LR
     end
 
     subgraph Resources["<b>Resources</b>"]
-        GKE_RES(["<b>GKE Clusters</b>"])
-        VM_RES(["<b>VM Instances</b>"])
-        DB_RES(["<b>Databases</b>"])
+        GKE_RES("<b>GKE Clusters</b>")
+        VM_RES("<b>VM Instances</b>")
+        DB_RES("<b>Databases</b>")
         NAT ==> GKE_RES
         NAT ==> VM_RES
         VPC_NET ==> DB_RES
     end
 
     subgraph Platform["<b>Platform</b>"]
-        ARGOCD(["<b>ArgoCD</b>"])
-        APPS(["<b>Applications</b>"])
+        ARGOCD("<b>ArgoCD</b>")
+        APPS("<b>Applications</b>")
         GKE_RES ==> ARGOCD
         ARGOCD ==> APPS
     end
 
-    classDef found fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#1b5e20
-    classDef infra fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#0d47a1
-    classDef res fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#bf360c
-    classDef plat fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#1b5e20
+    classDef found fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
+    classDef infra fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#000
+    classDef res fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#000
+    classDef plat fill:#dcedc8,stroke:#33691e,stroke-width:3px,font-weight:bold,color:#000
 
     class ORG,FOLDER,PROJECT found
     class VPC_NET,EXT_IP,ROUTER,NAT infra
