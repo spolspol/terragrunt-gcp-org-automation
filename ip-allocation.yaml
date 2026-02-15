@@ -72,7 +72,7 @@ development:
   total_ips: 1441792
   environments:
     # Active environment
-    dev-01:
+    dp-dev-01:
       block: "10.10.0.0/16"
       range: "10.10.0.0 - 10.10.255.255"
       total_ips: 65536
@@ -133,7 +133,7 @@ development:
           note: "GKE cluster-01 internal ingress IP"
 
     # Functions environment
-    fn-01:
+    fn-dev-01:
       block: "10.20.0.0/16"
       range: "10.20.0.0 - 10.20.255.255"
       total_ips: 65536
@@ -151,7 +151,7 @@ development:
           description: "Serverless VPC connector subnet"
 
     # Data platform environment
-    dp-01:
+    dp-dev-01:
       block: "10.30.0.0/16"
       range: "10.30.0.0 - 10.30.255.255"
       total_ips: 65536
@@ -271,13 +271,13 @@ psa:
       range: "10.199.16.0 - 10.199.31.255"
       status: "active"
       projects:
-        dev-01:
+        dp-dev-01:
           cidr: "10.199.16.0/24"
           status: "active"
-        fn-01:
+        fn-dev-01:
           cidr: "10.20.200.0/24"
           status: "active"
-        dp-01:
+        dp-dev-01:
           cidr: "10.30.200.0/24"
           status: "active"
     staging:
@@ -308,9 +308,9 @@ special:
 
   nat_gateway:
     description: "NAT Gateway external IP allocations"
-    dev-01: "TBD - allocated dynamically by GCP"
+    dp-dev-01: "TBD - allocated dynamically by GCP"
     purpose: "Provides internet access for GKE and public subnet resources"
-    coverage: "dev-01: 10.10.64.0/20 (GKE) + 10.10.16.0/21 (public); dp-01: 10.30.64.0/20 (GKE) + 10.30.16.0/21 (public)"
+    coverage: "dp-dev-01: 10.10.64.0/20 (GKE) + 10.10.16.0/21 (public); dp-dev-01: 10.30.64.0/20 (GKE) + 10.30.16.0/21 (public)"
 
 # Allocation rules
 rules:
@@ -324,7 +324,7 @@ rules:
 
 # Usage summary
 summary:
-  development_allocated: 3 # dev-01, fn-01, dp-01
+  development_allocated: 3 # dp-dev-01, fn-dev-01, dp-dev-01
   development_reserved: 3 # dev-02, dev-03, dev-04
   hub_allocated: 1 # vpn-gateway
   perimeter_reserved: 1 # dns-infra

@@ -41,7 +41,7 @@ Version pinned in `_common/common.hcl` as `module_versions.certificate_manager`.
 
 | Input | Type | Description | Example |
 |-------|------|-------------|---------|
-| `project_id` | string | GCP project ID | `"fn-01-a"` |
+| `project_id` | string | GCP project ID | `"fn-dev-01-a"` |
 
 ## Key Configuration Objects
 
@@ -84,7 +84,7 @@ Each entry:
 
 ## Basic Usage
 
-This example is derived from a real `api-lb-cert` implementation in `fn-01`:
+This example is derived from a real `api-lb-cert` implementation in `fn-dev-01`:
 
 ```hcl
 include "root" {
@@ -104,7 +104,7 @@ include "cert_manager_template" {
 dependency "project" {
   config_path = "../../../project"
   mock_outputs = {
-    project_id = "fn-01-a"
+    project_id = "fn-dev-01-a"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
 }
@@ -121,7 +121,7 @@ inputs = {
   project_id = dependency.project.outputs.project_id
 
   issuance_configs = {
-    fn-01-api-config = {
+    fn-dev-01-api-config = {
       ca_pool                    = dependency.cas.outputs.ca_pool_id
       key_algorithm              = "ECDSA_P256"
       lifetime                   = "2592000s" # 30 days (GCP maximum for issuance configs)
@@ -130,21 +130,21 @@ inputs = {
   }
 
   certificates = {
-    api-fn-01 = {
+    api-fn-dev-01 = {
       managed = {
-        domains         = ["api.fn-01.uat.example.io"]
-        issuance_config = "fn-01-api-config"
+        domains         = ["api.fn-dev-01.uat.example.io"]
+        issuance_config = "fn-dev-01-api-config"
       }
     }
   }
 
   map = {
-    name        = "fn-01-cloud-run-cert-map"
-    description = "Certificate map for fn-01 Cloud Run services LB"
+    name        = "fn-dev-01-cloud-run-cert-map"
+    description = "Certificate map for fn-dev-01 Cloud Run services LB"
     entries = {
-      api-fn-01 = {
-        certificates = ["api-fn-01"]
-        hostname     = "api.fn-01.uat.example.io"
+      api-fn-dev-01 = {
+        certificates = ["api-fn-dev-01"]
+        hostname     = "api.fn-dev-01.uat.example.io"
       }
     }
   }
@@ -160,9 +160,9 @@ The primary pattern: issue a private CA certificate via CAS and attach it to an 
 ```
 Root CA (dev-pki)
   └── Subordinate CA (uat-subordinate in org-uat-pool-01)
-        └── Issuance Config (fn-01-api-config)
-              └── Certificate (api-fn-01)
-                    └── Certificate Map (fn-01-cloud-run-cert-map)
+        └── Issuance Config (fn-dev-01-api-config)
+              └── Certificate (api-fn-dev-01)
+                    └── Certificate Map (fn-dev-01-cloud-run-cert-map)
                           └── Load Balancer frontend
 ```
 
@@ -232,12 +232,12 @@ inputs = {
 
 ### Cross-Project IAM for CAS Pools
 
-When the Certificate Manager and CAS pool live in **different projects** (e.g. certificates in `fn-01`, CA pool in `uat-pki`), two additional steps are required:
+When the Certificate Manager and CAS pool live in **different projects** (e.g. certificates in `fn-dev-01`, CA pool in `uat-pki`), two additional steps are required:
 
 **1. Provision the Certificate Manager service agent** in the consuming project via `activate_api_identities` in the project factory module:
 
 ```hcl
-# In the consuming project's terragrunt.hcl (e.g. fn-01/project/)
+# In the consuming project's terragrunt.hcl (e.g. fn-dev-01/project/)
 inputs = {
   activate_api_identities = [
     {
@@ -272,7 +272,7 @@ The CAS CA hierarchy for the current UAT environment:
 Root CA (dev-pki project)
   └── Subordinate CA (uat-pki project, org-uat-pool-01)
         ├── IAM: gg_org-devops (certificateRequester)
-        └── IAM: service-<PROJECT_NUMBER> (certificateRequester) <- fn-01 CM agent
+        └── IAM: service-<PROJECT_NUMBER> (certificateRequester) <- fn-dev-01 CM agent
 ```
 
 ## CI/CD Integration
@@ -308,8 +308,8 @@ The resource is automatically detected and deployed by the IaC Engine workflow w
 
 ```bash
 # Check certificate status
-gcloud certificate-manager certificates describe api-fn-01 \
-  --project=fn-01-a
+gcloud certificate-manager certificates describe api-fn-dev-01 \
+  --project=fn-dev-01-a
 
 # Verify CA pool permissions
 gcloud privateca pools get-iam-policy org-uat-pool-01 \
@@ -327,13 +327,13 @@ gcloud privateca pools get-iam-policy org-uat-pool-01 \
 
 ```bash
 # Verify map exists
-gcloud certificate-manager maps describe fn-01-cloud-run-cert-map \
-  --project=fn-01-a
+gcloud certificate-manager maps describe fn-dev-01-cloud-run-cert-map \
+  --project=fn-dev-01-a
 
 # List map entries
 gcloud certificate-manager maps entries list \
-  --map=fn-01-cloud-run-cert-map \
-  --project=fn-01-a
+  --map=fn-dev-01-cloud-run-cert-map \
+  --project=fn-dev-01-a
 ```
 
 ## References

@@ -86,10 +86,10 @@ The region abbreviation is generated using a generic algorithm that works across
 ### Examples
 | Region | Algorithm | Abbreviation | Example Cluster Name |
 |--------|-----------|--------------|---------------------|
-| `europe-west2` | `e` + `w` + `2` | `ew2` | `dev-01-ew2-cluster-01` |
-| `us-central1` | `u` + `c` + `1` | `uc1` | `dev-01-uc1-cluster-01` |
-| `asia-east1` | `a` + `e` + `1` | `ae1` | `dev-01-ae1-cluster-01` |
-| `us-west1` | `u` + `w` + `1` | `uw1` | `dev-01-uw1-cluster-01` |
+| `europe-west2` | `e` + `w` + `2` | `ew2` | `dp-dev-01-ew2-cluster-01` |
+| `us-central1` | `u` + `c` + `1` | `uc1` | `dp-dev-01-uc1-cluster-01` |
+| `asia-east1` | `a` + `e` + `1` | `ae1` | `dp-dev-01-ae1-cluster-01` |
+| `us-west1` | `u` + `w` + `1` | `uw1` | `dp-dev-01-uw1-cluster-01` |
 
 ### Implementation
 The naming logic is implemented in the cluster's `terragrunt.hcl`:
@@ -589,19 +589,19 @@ Use the dedicated workflow for manual cluster management:
 # Plan changes
 gh workflow run manage-gke-cluster.yml \
   --field action=plan \
-  --field cluster=dev-01/cluster-01 \
+  --field cluster=dp-dev-01/cluster-01 \
   --field environment=development
 
 # Apply changes
 gh workflow run manage-gke-cluster.yml \
   --field action=apply \
-  --field cluster=dev-01/cluster-01 \
+  --field cluster=dp-dev-01/cluster-01 \
   --field environment=development
 
 # Destroy cluster
 gh workflow run manage-gke-cluster.yml \
   --field action=destroy \
-  --field cluster=dev-01/cluster-01 \
+  --field cluster=dp-dev-01/cluster-01 \
   --field environment=development
 ```
 

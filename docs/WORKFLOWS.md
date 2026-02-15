@@ -357,7 +357,7 @@ flowchart TB
 **Example Instances**:
 ```yaml
 - web-project/web-server-01
-- org-dev-01/app-server-01
+- org-dp-dev-01/app-server-01
 ```
 
 ### SQL Instance Management
@@ -373,7 +373,7 @@ flowchart TB
 
 **Example Instances**:
 ```yaml
-- org-dev-01/sql-server-01
+- org-dp-dev-01/sql-server-01
 - org-prod-01/sql-server-main
 ```
 

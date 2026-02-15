@@ -233,7 +233,7 @@ locals {
     non-production = {
       machine_type        = "e2-medium"
       disk_size_gb        = 10
-      disk_type           = "pd-ssd"
+      disk_type           = "pd-standard"
       preemptible         = false
       automatic_restart   = false
       deletion_protection = false

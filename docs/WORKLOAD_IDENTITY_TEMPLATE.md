@@ -220,7 +220,7 @@ locals {
 dependency "project" {
   config_path = "../../project"
   mock_outputs = {
-    project_id = "dp-01-a"
+    project_id = "dp-dev-01-a"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
 }
@@ -228,7 +228,7 @@ dependency "project" {
 dependency "gke_cluster" {
   config_path = "../../europe-west2/gke/${local.cluster_id}"
   mock_outputs = {
-    name     = "dp-01-ew2-cluster-01"
+    name     = "dp-dev-01-ew2-cluster-01"
     location = "europe-west2"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
@@ -263,17 +263,17 @@ locals {
     # GKE Workload Identity Service Accounts for cluster-01
 
     # ArgoCD Server - container operations
-    "serviceAccount:cluster-01-argocd-server@dp-01-a.iam.gserviceaccount.com" = [
+    "serviceAccount:cluster-01-argocd-server@dp-dev-01-a.iam.gserviceaccount.com" = [
       "roles/container.developer",
     ]
 
     # External DNS - DNS record management
-    "serviceAccount:cluster-01-external-dns@dp-01-a.iam.gserviceaccount.com" = [
+    "serviceAccount:cluster-01-external-dns@dp-dev-01-a.iam.gserviceaccount.com" = [
       "roles/dns.admin",
     ]
 
     # Cert Manager - DNS challenges for certificates
-    "serviceAccount:cluster-01-cert-manager@dp-01-a.iam.gserviceaccount.com" = [
+    "serviceAccount:cluster-01-cert-manager@dp-dev-01-a.iam.gserviceaccount.com" = [
       "roles/dns.admin",
     ]
 
@@ -281,12 +281,12 @@ locals {
     # See: europe-west2/secrets/gke-*/terragrunt.hcl for secret_accessors_list
 
     # Monitoring - Grafana/Prometheus
-    "serviceAccount:cluster-01-monitoring@dp-01-a.iam.gserviceaccount.com" = [
+    "serviceAccount:cluster-01-monitoring@dp-dev-01-a.iam.gserviceaccount.com" = [
       "roles/monitoring.viewer",
     ]
 
     # Data pipeline SA - Data pipelines
-    "serviceAccount:cluster-01-pipeline-sa@dp-01-a.iam.gserviceaccount.com" = [
+    "serviceAccount:cluster-01-pipeline-sa@dp-dev-01-a.iam.gserviceaccount.com" = [
       "roles/bigquery.dataEditor",
       "roles/bigquery.jobUser",
       "roles/storage.objectAdmin",
@@ -294,7 +294,7 @@ locals {
     ]
 
     # Google CAS Issuer - Certificate Authority Service
-    "serviceAccount:cluster-01-google-cas-issuer@dp-01-a.iam.gserviceaccount.com" = [
+    "serviceAccount:cluster-01-google-cas-issuer@dp-dev-01-a.iam.gserviceaccount.com" = [
       "roles/privateca.certificateRequester",
     ]
   }
@@ -321,7 +321,7 @@ locals {
 
 1. **Create WI directory**:
 ```bash
-mkdir -p live/non-production/uat/data-platform/dp-01/iam-workload-identity/cluster-01-my-app
+mkdir -p live/non-production/uat/data-platform/dp-dev-01/iam-workload-identity/cluster-01-my-app
 ```
 
 2. **Create terragrunt.hcl**:
@@ -421,7 +421,7 @@ graph LR
 
 ```bash
 # 1. Deploy workload identity resources
-cd live/non-production/uat/data-platform/dp-01/iam-workload-identity
+cd live/non-production/uat/data-platform/dp-dev-01/iam-workload-identity
 
 for sa in cluster-01-*; do
   echo "=== Init $sa ==="

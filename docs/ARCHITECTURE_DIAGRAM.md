@@ -46,7 +46,7 @@ graph TB
         
         %% Development Environment
         subgraph Development["📁 Development Folder"]
-            subgraph DevProj["🗂️ dev-01 Project"]
+            subgraph DevProj["🗂️ dp-dev-01 Project"]
                 
                 %% Core Networking
                 subgraph Network["🌐 Network Layer"]
@@ -301,7 +301,7 @@ graph LR
 ## IP Allocation Overview
 
 ```mermaid
-pie title "IP Space Utilization (dev-01)"
+pie title "IP Space Utilization (dp-dev-01)"
     "DMZ Subnet" : 2048
     "Private Subnet" : 2048
     "Public Subnet" : 2048

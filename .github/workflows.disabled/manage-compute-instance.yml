@@ -9,8 +9,8 @@ on:
         type: choice
         options:
           # Example project VMs
-          - dev-01/linux-vm
-          - dev-01/sql-server-01
+          - dp-dev-01/linux-vm
+          - dp-dev-01/sql-server-01
       action:
         description: 'Action to perform on the compute instance'
         required: true
@@ -63,7 +63,7 @@ jobs:
           # Parse project and instance name from project/instance format
           if ! echo "$VM_INSTANCE" | grep -q "/"; then
             echo "Error: Invalid VM instance format. Expected 'project/instance-name' format."
-            echo "Valid formats: dev-01/linux-vm, dev-01/sql-server-01"
+            echo "Valid formats: dp-dev-01/linux-vm, dp-dev-01/sql-server-01"
             exit 1
           fi
 
@@ -86,7 +86,7 @@ jobs:
 
           # Validate project and instance combination
           case "$PROJECT" in
-            "dev-01")
+            "dp-dev-01")
               case "$INSTANCE_NAME" in
                 "linux-vm"|"sql-server-01")
                   echo "Valid instance '$INSTANCE_NAME' for project '$PROJECT'"
@@ -100,7 +100,7 @@ jobs:
               ;;
             *)
               echo "Error: Unknown project: $PROJECT"
-              echo "Available projects: dev-01"
+              echo "Available projects: dp-dev-01"
               exit 1
               ;;
           esac
@@ -128,7 +128,7 @@ jobs:
           if [ -z "$INSTANCE_PATH" ]; then
             echo "Error: Compute instance '$INSTANCE_NAME' not found in project '$PROJECT'"
             echo "Available instances by project:"
-            echo "  dev-01: linux-vm, sql-server-01"
+            echo "  dp-dev-01: linux-vm, sql-server-01"
             exit 1
           fi
 

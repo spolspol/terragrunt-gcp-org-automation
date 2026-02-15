@@ -88,7 +88,7 @@ locals {
     component   = "service-account"
     managed_by  = "terragrunt"
     environment = "development"
-    project     = "dev-01"
+    project     = "dp-dev-01"
   }
 
   # Environment-specific settings for service accounts

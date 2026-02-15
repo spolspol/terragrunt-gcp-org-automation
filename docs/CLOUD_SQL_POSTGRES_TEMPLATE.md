@@ -79,17 +79,17 @@ include "base" {
 }
 
 # Access environment name
-# include.base.locals.merged.environment_name  # e.g., "dev-01"
+# include.base.locals.merged.environment_name  # e.g., "dp-dev-01"
 ```
 
 ### Naming Patterns
 
 | Resource | Pattern | Example |
 |----------|---------|---------|
-| **Instance Name** | `${environment_name}-postgres-main` | `dev-01-postgres-main` |
-| **Database Name** | `${environment_name}-pipeline-db` | `dev-01-pipeline-db` |
-| **User Name** | `${environment_name}-pipeline-db` | `dev-01-pipeline-db` |
-| **Labels** | Uses environment variables | `project: dev-01` |
+| **Instance Name** | `${environment_name}-postgres-main` | `dp-dev-01-postgres-main` |
+| **Database Name** | `${environment_name}-pipeline-db` | `dp-dev-01-pipeline-db` |
+| **User Name** | `${environment_name}-pipeline-db` | `dp-dev-01-pipeline-db` |
+| **Labels** | Uses environment variables | `project: dp-dev-01` |
 
 ### Implementation Example
 ```hcl
@@ -133,7 +133,7 @@ additional_users = [
 #### Workflow
 1. **Deploy Secret placeholder**:
    ```bash
-   cd live/non-production/development/dev-01/secrets/gke-pipeline-cloudsql-password
+   cd live/non-production/development/dp-dev-01/secrets/gke-pipeline-cloudsql-password
    # Optional (local/manual): create the first secret version via Terragrunt using TF_VAR_* (stored in state):
    # export TF_VAR_pipeline_cloudsql_password="..."  # pragma: allowlist secret
    GOOGLE_APPLICATION_CREDENTIALS=~/tofu-sa-org-key.json terragrunt apply --auto-approve
@@ -158,16 +158,16 @@ PY
 
 4. **Set the Cloud SQL user password**:
    ```bash
-   gcloud sql users set-password dev-01-pipeline-db \
-     --instance=dev-01-postgres-main \
-     --project=dev-01-a \
+   gcloud sql users set-password dp-dev-01-pipeline-db \
+     --instance=dp-dev-01-postgres-main \
+     --project=dp-dev-01-a \
      --password="$NEW_PASSWORD"  # pragma: allowlist secret
    ```
 
 5. **Update Secret Manager** (add a new version):
    ```bash
    echo -n "$NEW_PASSWORD" | gcloud secrets versions add gke-pipeline-cloudsql-password \
-     --data-file=- --project=dev-01-a  # pragma: allowlist secret
+     --data-file=- --project=dp-dev-01-a  # pragma: allowlist secret
    ```
 
 ### Kubernetes Integration
@@ -270,7 +270,7 @@ For a complete data pipeline deployment, ensure these secrets are configured:
 
 ### Service Account Configuration
 
-The pipeline service account (`pipeline-sa@dev-01-a.iam.gserviceaccount.com`) needs:
+The pipeline service account (`pipeline-sa@dp-dev-01-a.iam.gserviceaccount.com`) needs:
 
 ```bash
 # BigQuery permissions for data pipeline processing
@@ -287,7 +287,7 @@ roles/cloudsql.client
 ### Deployment Checklist
 
 1. **Deploy Cloud SQL Instance** with SSL-only connections
-2. **Create Database and User** (`dev-01-pipeline-db`)
+2. **Create Database and User** (`dp-dev-01-pipeline-db`)
 3. **Generate Client Certificates** for secure connections
 4. **Create Service Account** with BigQuery and GCS permissions
 5. **Store Service Account Key** in Secret Manager
@@ -302,11 +302,11 @@ Data pipeline pods need both database connectivity and GCP access:
 env:
   # Database connection
   - name: PIPELINE_POSTGRES_HOST
-    value: "postgres-main.dev-01.dev.example.io"
+    value: "postgres-main.dp-dev-01.dev.example.io"
   - name: PIPELINE_POSTGRES_DB
-    value: "dev-01-pipeline-db"
+    value: "dp-dev-01-pipeline-db"
   - name: PIPELINE_POSTGRES_USER
-    value: "dev-01-pipeline-db"
+    value: "dp-dev-01-pipeline-db"
   - name: PIPELINE_POSTGRES_PASSWORD
     valueFrom:
       secretKeyRef:
@@ -370,10 +370,10 @@ postgresql://[USER]:[PASSWORD]@[PRIVATE_IP]:5432/[DATABASE]?sslmode=verify-full&
 #### Example for Data Pipeline
 ```
 # Standard SSL connection
-postgresql://dev-01-pipeline-db:[PASSWORD]@postgres-main.dev-01.dev.example.io:5432/dev-01-pipeline-db?sslmode=require
+postgresql://dp-dev-01-pipeline-db:[PASSWORD]@postgres-main.dp-dev-01.dev.example.io:5432/dp-dev-01-pipeline-db?sslmode=require
 
 # With client certificates
-postgresql://dev-01-pipeline-db:[PASSWORD]@postgres-main.dev-01.dev.example.io:5432/dev-01-pipeline-db?sslmode=verify-full&sslcert=/etc/postgresql-certs/client.crt&sslkey=/etc/postgresql-certs/client.key&sslrootcert=/etc/postgresql-certs/ca.crt
+postgresql://dp-dev-01-pipeline-db:[PASSWORD]@postgres-main.dp-dev-01.dev.example.io:5432/dp-dev-01-pipeline-db?sslmode=verify-full&sslcert=/etc/postgresql-certs/client.crt&sslkey=/etc/postgresql-certs/client.key&sslrootcert=/etc/postgresql-certs/ca.crt
 ```
 
 ### Firewall Rules
@@ -400,7 +400,7 @@ resource "google_compute_firewall" "allow-gke-to-cloudsql" {
 
 1. **Navigate to the Cloud SQL directory**:
    ```bash
-   cd live/non-production/development/dev-01/europe-west2/cloud-sql/postgres-main
+   cd live/non-production/development/dp-dev-01/europe-west2/cloud-sql/postgres-main
    ```
 
 2. **Set authentication**:
@@ -427,7 +427,7 @@ resource "google_compute_firewall" "allow-gke-to-cloudsql" {
    ```bash
    # If postgres database already exists
    terragrunt import 'google_sql_database.default[0]' \
-     'projects/dev-01-a/instances/dev-01-postgres-main/databases/postgres'
+     'projects/dp-dev-01-a/instances/dp-dev-01-postgres-main/databases/postgres'
    ```
 
 7. **Retrieve outputs**:
@@ -604,12 +604,12 @@ The Cloud SQL module provides these key outputs:
 
 | Output | Description | Example |
 |--------|-------------|---------|
-| `instance_name` | The name of the database instance | `dev-01-postgres-main` |
+| `instance_name` | The name of the database instance | `dp-dev-01-postgres-main` |
 | `instance_connection_name` | The connection name for the database instance | `project:region:instance` |
 | `instance_first_ip_address` | The first IPv4 address of the instance | `10.199.16.5` |
-| `generated_user_password` | Map of generated passwords by user (do not store; reset manually) | `{"dev-01-pipeline-db": "..."}` |
-| `additional_users` | List of additional users created | `[{name: "dev-01-pipeline-db"}]` |
-| `additional_databases` | List of additional databases created | `[{name: "dev-01-pipeline-db"}]` |
+| `generated_user_password` | Map of generated passwords by user (do not store; reset manually) | `{"dp-dev-01-pipeline-db": "..."}` |
+| `additional_users` | List of additional users created | `[{name: "dp-dev-01-pipeline-db"}]` |
+| `additional_databases` | List of additional databases created | `[{name: "dp-dev-01-pipeline-db"}]` |
 
 ## SSL Configuration and Client Certificates
 
@@ -626,7 +626,7 @@ As of 2025-09-17, all Cloud SQL PostgreSQL instances enforce SSL-only connection
 
 A utility script is provided to generate and manage client certificates:
 
-**Location**: `live/non-production/development/dev-01/europe-west2/cloud-sql/postgres-main/generate-client-cert.sh`
+**Location**: `live/non-production/development/dp-dev-01/europe-west2/cloud-sql/postgres-main/generate-client-cert.sh`
 
 **Usage**:
 ```bash
@@ -656,7 +656,7 @@ Client certificates are stored in Google Secret Manager as JSON with PEM-formatt
 }
 ```
 
-**Secret Configuration**: `live/non-production/development/dev-01/secrets/gke-pipeline-dbt-client-certs/`
+**Secret Configuration**: `live/non-production/development/dp-dev-01/secrets/gke-pipeline-dbt-client-certs/`
 
 #### Kubernetes Integration
 
@@ -783,17 +783,17 @@ For cost-sensitive environments like UAT, use Google-managed CA with `ENCRYPTED_
 
 ### UAT Example (Google-Managed CA)
 
-The dp-01 Cloud SQL instance uses Google-managed CA for cost optimisation:
+The dp-dev-01 Cloud SQL instance uses Google-managed CA for cost optimisation:
 
 | Component | Value |
 |-----------|-------|
-| Instance | `dp-01-postgres-main` |
+| Instance | `dp-dev-01-postgres-main` |
 | Edition | `ENTERPRISE` |
 | SSL Mode | `ENCRYPTED_ONLY` |
 | CA Type | Google-managed |
-| DNS | `postgres-main.dp-01.uat.example.io` |
+| DNS | `postgres-main.dp-dev-01.uat.example.io` |
 
-**Location:** `live/non-production/uat/data-platform/dp-01/europe-west2/cloud-sql/postgres-main/`
+**Location:** `live/non-production/uat/data-platform/dp-dev-01/europe-west2/cloud-sql/postgres-main/`
 
 > **Note:** Originally planned to use customer-managed CA from UAT CAS (`org-uat-pool-01`), but switched to Google-managed CA due to `ENTERPRISE_PLUS` edition requirement (~$200+/month vs ~$15/month).
 

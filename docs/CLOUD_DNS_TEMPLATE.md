@@ -215,7 +215,7 @@ inputs = {
       name    = "development"
       type    = "CNAME"
       ttl     = 300
-      records = ["cluster-01.ew2.dev-01.dev.example.io."]
+      records = ["cluster-01.ew2.dp-dev-01.dev.example.io."]
     }
   ]
 }
@@ -368,12 +368,12 @@ include "dns_peering_template" {
 }
 
 dependency "target_network" {
-  config_path = "${get_repo_root()}/live/non-production/development/dev-01/vpc-network"
+  config_path = "${get_repo_root()}/live/non-production/development/dp-dev-01/vpc-network"
 }
 
 inputs = {
-  domain      = "dev-01.dev.example.io."
-  description = "Peering zone exposing dev-01 private DNS to VPN clients"
+  domain      = "dp-dev-01.dev.example.io."
+  description = "Peering zone exposing dp-dev-01 private DNS to VPN clients"
   peering_config = [
     {
       target_network = {

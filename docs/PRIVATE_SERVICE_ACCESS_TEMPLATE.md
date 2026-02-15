@@ -41,7 +41,7 @@ Private Service Access configurations are located within the region directories 
 live/
 └── non-production/
     └── development/
-        └── dev-01/
+        └── dp-dev-01/
             └── europe-west2/
                 └── private-service-access/  # Private Service Access configuration
                     └── terragrunt.hcl

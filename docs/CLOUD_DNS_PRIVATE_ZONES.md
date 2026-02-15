@@ -29,12 +29,12 @@ The organization uses private Cloud DNS zones for internal name resolution withi
 Private zones follow the pattern: `{project}.{env}.example.io`
 
 **Development Environment:**
-- `dev-01.dev.example.io.` (Development)
+- `dp-dev-01.dev.example.io.` (Development)
 - `dev.example.io.` (Shared hub zone for VPN clients)
 
 **UAT Environment:**
-- `dp-01.uat.example.io.` (Data Platform UAT)
-- `fn-01.uat.example.io.` (Functions UAT)
+- `dp-dev-01.uat.example.io.` (Data Platform UAT)
+- `fn-dev-01.uat.example.io.` (Functions UAT)
 - `uat.example.io.` (Shared UAT hub zone for VPN clients)
 
 **Production Environment (future):**
@@ -47,20 +47,20 @@ Private zones follow the pattern: `{project}.{env}.example.io`
 #### Location
 ```
 # Development Environment
-live/non-production/development/dev-01/global/cloud-dns/
+live/non-production/development/dp-dev-01/global/cloud-dns/
 ├── dns.hcl                         # DNS configuration
-└── dev-01-dev-example-io/          # dev-01 private zone implementation
+└── dp-dev-01-dev-example-io/          # dp-dev-01 private zone implementation
     └── terragrunt.hcl
 
 # UAT Environment
-live/non-production/uat/data-platform/dp-01/global/cloud-dns/
+live/non-production/uat/data-platform/dp-dev-01/global/cloud-dns/
 ├── dns.hcl                         # UAT DNS configuration
-└── dp-01-uat-example-io/           # dp-01 private zone
+└── dp-dev-01-uat-example-io/           # dp-dev-01 private zone
     └── terragrunt.hcl
 
-live/non-production/uat/functions/fn-01/global/cloud-dns/
+live/non-production/uat/functions/fn-dev-01/global/cloud-dns/
 ├── dns.hcl                         # UAT DNS configuration
-└── fn-01-uat-example-io/           # fn-01 private zone
+└── fn-dev-01-uat-example-io/           # fn-dev-01 private zone
     └── terragrunt.hcl
 
 # Hub Zones (DNS Hub project)
@@ -109,8 +109,8 @@ dependency "network" {
 
 inputs = {
   # Zone configuration
-  domain      = "dev-01.dev.example.io."
-  description = "Private DNS zone for dev-01 internal resources and Private Service Connect"
+  domain      = "dp-dev-01.dev.example.io."
+  description = "Private DNS zone for dp-dev-01 internal resources and Private Service Connect"
 
   # Private zone configuration
   type       = "private"
@@ -121,19 +121,19 @@ inputs = {
     dependency.network.outputs.network_self_link
   ]
 
-  # DNS Records for dev-01 internal services (examples)
+  # DNS Records for dp-dev-01 internal services (examples)
   recordsets = [
     {
       name    = "postgres-main"
       type    = "A"
       ttl     = 300
-      records = ["10.199.16.3"]   # dev-01 Cloud SQL private IP
+      records = ["10.199.16.3"]   # dp-dev-01 Cloud SQL private IP
     },
     {
       name    = "windows-qat-ers"
       type    = "A"
       ttl     = 300
-      records = ["10.132.0.21"]   # dev-01 QA Windows host (perimeter subnet)
+      records = ["10.132.0.21"]   # dp-dev-01 QA Windows host (perimeter subnet)
     }
   ]
 }
@@ -164,15 +164,15 @@ inputs = {
       name    = "development"
       type    = "CNAME"
       ttl     = 300
-      records = ["cluster-01.ew2.dev-01.dev.example.io."]
+      records = ["cluster-01.ew2.dp-dev-01.dev.example.io."]
     }
   ]
 }
 ```
 
 - **Purpose**: surface shared aliases and service endpoints to all VPN users.
-- **Example**: the `development.dev.example.io` CNAME now resolves to the dev-01 GKE services endpoint.
-- **App URLs**: application ingress follows `https://<app>.dev-01.dev.example.io` (e.g., `https://grafana.dev-01.dev.example.io`).
+- **Example**: the `development.dev.example.io` CNAME now resolves to the dp-dev-01 GKE services endpoint.
+- **App URLs**: application ingress follows `https://<app>.dp-dev-01.dev.example.io` (e.g., `https://grafana.dp-dev-01.dev.example.io`).
 - **Peering**: this zone is directly associated with the VPN Gateway VPC, so no additional Cloud DNS peering is required.
 
 ### 3. GKE Integration with Cloud DNS
@@ -187,7 +187,7 @@ GKE clusters can use Cloud DNS as their DNS provider instead of the default kube
 
 #### Cluster Configuration
 
-In `live/non-production/development/dev-01/europe-west2/gke/cluster-02/terragrunt.hcl`:
+In `live/non-production/development/dp-dev-01/europe-west2/gke/cluster-02/terragrunt.hcl`:
 
 ```hcl
 inputs = {
@@ -200,7 +200,7 @@ inputs = {
 
   # Stub domains for internal resolution
   stub_domains = {
-  "dev-01.dev.example.io" = ["169.254.169.254"]
+  "dp-dev-01.dev.example.io" = ["169.254.169.254"]
   }
 }
 ```
@@ -215,11 +215,11 @@ To make private DNS available to VPN clients, the `vpn-gateway` project hosts Cl
 ```
 live/non-production/hub/vpn-gateway/global/cloud-dns/peering/
 ├── peering.hcl                              # Shared labels/defaults
-├── dev-01/                                  # Peering zone for development VPC
+├── dp-dev-01/                                  # Peering zone for development VPC
 │   └── terragrunt.hcl
-├── dp-01/                                   # Peering zone for dp-01 VPC
+├── dp-dev-01/                                   # Peering zone for dp-dev-01 VPC
 │   └── terragrunt.hcl
-└── fn-01/                                   # Peering zone for fn-01 VPC
+└── fn-dev-01/                                   # Peering zone for fn-dev-01 VPC
     └── terragrunt.hcl
 ```
 
@@ -227,12 +227,12 @@ Each `terragrunt.hcl` uses the `_common/templates/cloud_dns_peering.hcl` templat
 
 ```hcl
 dependency "target_network" {
-  config_path = "${get_repo_root()}/live/non-production/development/dev-01/vpc-network"
+  config_path = "${get_repo_root()}/live/non-production/development/dp-dev-01/vpc-network"
 }
 
 inputs = {
-  domain      = "dev-01.dev.example.io."
-  description = "Peering zone exposing dev-01 private DNS to VPN clients"
+  domain      = "dp-dev-01.dev.example.io."
+  description = "Peering zone exposing dp-dev-01 private DNS to VPN clients"
   peering_config = [
     {
       target_network = {
@@ -302,25 +302,25 @@ When creating a Private Service Connect endpoint:
 1. **Create the PSC endpoint**
    ```bash
    gcloud compute addresses create postgres-psc-endpoint \
-     --subnet=dev-01-vpc-network-private \
+     --subnet=dp-dev-01-vpc-network-private \
      --address=10.132.8.100 \
      --region=europe-west2 \
-     --project=dev-01-a
+     --project=dp-dev-01-a
    ```
 
 2. **Add DNS record**
    ```bash
-  gcloud dns record-sets create postgres-main.dev-01.dev.example.io. \
-    --zone=dev-01-dev-example-io-internal \
+  gcloud dns record-sets create postgres-main.dp-dev-01.dev.example.io. \
+    --zone=dp-dev-01-dev-example-io-internal \
      --type=A \
      --ttl=300 \
      --rrdatas=10.132.8.100 \
-     --project=dev-01-a
+     --project=dp-dev-01-a
    ```
 
 3. **Update connection strings**
    ```
-  postgresql://user:pass@postgres-main.dev-01.dev.example.io:5432/db  # pragma: allowlist secret
+  postgresql://user:pass@postgres-main.dp-dev-01.dev.example.io:5432/db  # pragma: allowlist secret
    ```
 
 ## DNS Records Management
@@ -351,7 +351,7 @@ recordsets = [
 
 Then apply:
 ```bash
-cd live/non-production/development/dev-01/global/cloud-dns/dev-01-dev-example-io-internal
+cd live/non-production/development/dp-dev-01/global/cloud-dns/dp-dev-01-dev-example-io-internal
 terragrunt apply --auto-approve
 ```
 
@@ -359,20 +359,20 @@ terragrunt apply --auto-approve
 
 ```bash
 # Add A record
-gcloud dns record-sets create <name>.dev-01.dev.example.io. \
-  --zone=dev-01-dev-example-io-internal \
+gcloud dns record-sets create <name>.dp-dev-01.dev.example.io. \
+  --zone=dp-dev-01-dev-example-io-internal \
   --type=A \
   --ttl=300 \
   --rrdatas=<IP_ADDRESS> \
-  --project=dev-01-a
+  --project=dp-dev-01-a
 
 # Add CNAME record
-gcloud dns record-sets create <alias>.dev-01.dev.example.io. \
-  --zone=dev-01-dev-example-io-internal \
+gcloud dns record-sets create <alias>.dp-dev-01.dev.example.io. \
+  --zone=dp-dev-01-dev-example-io-internal \
   --type=CNAME \
   --ttl=300 \
-  --rrdatas=<target>.dev-01.dev.example.io. \
-  --project=dev-01-a
+  --rrdatas=<target>.dp-dev-01.dev.example.io. \
+  --project=dp-dev-01-a
 ```
 
 ## Testing and Validation
@@ -381,34 +381,34 @@ gcloud dns record-sets create <alias>.dev-01.dev.example.io. \
 
 ```bash
 # Get cluster credentials
-gcloud container clusters get-credentials dev-01-ew2-cluster-02 \
+gcloud container clusters get-credentials dp-dev-01-ew2-cluster-02 \
   --region=europe-west2 \
-  --project=dev-01-a
+  --project=dp-dev-01-a
 
 # Test DNS resolution
 kubectl run dns-test --image=busybox --rm -it --restart=Never -- \
-  nslookup cluster-01.ew2.dev-01.dev.example.io
+  nslookup cluster-01.ew2.dp-dev-01.dev.example.io
 
 # Validate custom records you add:
-# nslookup <record>.dev-01.dev.example.io
+# nslookup <record>.dp-dev-01.dev.example.io
 ```
 
 ### Verify Cloud DNS Configuration
 
 ```bash
 # Check zone details
-gcloud dns managed-zones describe dev-01-dev-example-io-internal \
-  --project=dev-01-a
+gcloud dns managed-zones describe dp-dev-01-dev-example-io-internal \
+  --project=dp-dev-01-a
 
 # List all records
 gcloud dns record-sets list \
-  --zone=dev-01-dev-example-io-internal \
-  --project=dev-01-a
+  --zone=dp-dev-01-dev-example-io-internal \
+  --project=dp-dev-01-a
 
 # Check cluster DNS configuration
-gcloud container clusters describe dev-01-ew2-cluster-02 \
+gcloud container clusters describe dp-dev-01-ew2-cluster-02 \
   --region=europe-west2 \
-  --project=dev-01-a \
+  --project=dp-dev-01-a \
   --format="yaml(clusterDnsConfig)"
 ```
 
@@ -461,8 +461,8 @@ kubectl run -it --rm debug --image=gcr.io/google.com/cloudsdktool/cloud-sdk:slim
 
 # Inside pod:
 apt-get update && apt-get install -y dnsutils
-nslookup cluster-01.ew2.dev-01.dev.example.io
-dig +trace cluster-01.ew2.dev-01.dev.example.io
+nslookup cluster-01.ew2.dp-dev-01.dev.example.io
+dig +trace cluster-01.ew2.dp-dev-01.dev.example.io
 ```
 
 ## Best Practices
@@ -546,6 +546,6 @@ dig +trace cluster-01.ew2.dev-01.dev.example.io
 - **2025-09-23**: Initial documentation created
 - **2025-09-23**: Added cluster-02 Cloud DNS configuration
 - **2025-09-23**: Updated DNS records for cluster-02 ingress endpoints
-- **2026-02-06**: Added UAT environment DNS zones (dp-01, fn-01)
+- **2026-02-06**: Added UAT environment DNS zones (dp-dev-01, fn-dev-01)
 - **2026-02-06**: Added uat.example.io hub zone for UAT VPN clients
 - **2026-02-06**: Added DNS peering zones for UAT projects

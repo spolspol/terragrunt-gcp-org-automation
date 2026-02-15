@@ -21,7 +21,7 @@ The Project template (`_common/templates/project.hcl`) provides a standardized a
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
-| `name` | Project name | `"dev-01"` |
+| `name` | Project name | `"dp-dev-01"` |
 | `org_id` | Organization ID | `"123456789"` |
 | `billing_account` | Billing account ID | `"ABCDEF-123456-789012"` |
 | `folder_id` | Parent folder ID | `"folders/123456789"` |
@@ -46,7 +46,7 @@ Project configurations are located within the environment directories following 
 live/
 └── non-production/
     └── development/
-        └── dev-01/  # Environment specific project
+        └── dp-dev-01/  # Environment specific project
             └── project/     # Project configuration directory
                 └── terragrunt.hcl
 ```

@@ -298,7 +298,7 @@ Organization (example-org.com)
 ├── Bootstrap Folder
 │   └── org-automation (Infrastructure management)
 ├── Development Folder
-│   └── dev-01 (Active development environment)
+│   └── dp-dev-01 (Active development environment)
 ├── Perimeter Folder
 │   └── Reserved for DMZ services
 └── Production Folder
@@ -315,7 +315,7 @@ Organization (example-org.com)
 Projects are organized by function:
 
 - **org-automation**: Infrastructure management and CI/CD
-- **dev-01**: Development environment with full stack
+- **dp-dev-01**: Development environment with full stack
   - VPC Network (10.132.0.0/16)
   - GKE Cluster with ArgoCD
   - NAT Gateway for secure egress
@@ -425,7 +425,7 @@ metadata:
 spec:
   provider:
     gcpsm:
-      projectID: "dev-01"
+      projectID: "dp-dev-01"
       auth:
         workloadIdentity:
           clusterLocation: europe-west2
@@ -512,7 +512,7 @@ Centralized tracking in `ip-allocation.yaml` with validation tools:
 python3 scripts/ip-allocation-checker.py validate
 
 # Suggest next allocation
-python3 scripts/ip-allocation-checker.py next dev-01
+python3 scripts/ip-allocation-checker.py next dp-dev-01
 ```
 
 ## Scalability and Evolution

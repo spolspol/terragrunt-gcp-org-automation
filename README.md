@@ -31,7 +31,7 @@ This infrastructure-as-code repository implements a hierarchical configuration a
 - **Terragrunt v0.80.2** for configuration management and DRY infrastructure code
 - **31 reusable templates** for standardised resource configuration
 - **Hub-and-spoke architecture** with centralised DNS, networking, PKI, and VPN
-- **Three sub-environment patterns** demonstrating general-purpose, serverless, and data platform architectures
+- **Two sub-environment patterns** demonstrating serverless and data platform architectures
 - **GitHub Actions** for automated CI/CD workflows with dependency-aware execution
 
 > **Note**: This repository uses `root.hcl` instead of `terragrunt.hcl` as the root configuration file.
@@ -40,42 +40,36 @@ This infrastructure-as-code repository implements a hierarchical configuration a
 
 ### Hub-and-Spoke Model
 
-```
-                    ┌─────────────────┐
-                    │  Organisation   │
-                    │  IAM Bindings   │
-                    └────────┬────────┘
-                             │
-                    ┌────────┴────────┐
-                    │       Hub       │
-                    │  (Shared Infra) │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-   ┌────┴─────┐       ┌─────┴─────┐       ┌─────┴──────┐
-   │  DNS Hub │       │  PKI Hub  │       │ VPN Gateway│
-   │          │       │           │       │            │
-   └──────────┘       └───────────┘       └────────────┘
-        │                    │
-   ┌────┴───────────────────────────────────────────────┐
-   │                  Development                       │
-   │  ┌──────────┐  ┌────────────┐  ┌───────────────┐  │
-   │  │  dev-01  │  │ functions  │  │   platform    │  │
-   │  │ General  │  │ fn-01      │  │   dp-01       │  │
-   │  │ Purpose  │  │ Serverless │  │   GKE + Data  │  │
-   │  └──────────┘  └────────────┘  └───────────────┘  │
-   └────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    ORG["Organisation<br/>IAM Bindings"]
+
+    subgraph HUB["Hub — Shared Infrastructure"]
+        DNS["DNS Hub<br/><i>Centralised DNS</i>"]
+        NET["Network Hub<br/><i>Connectivity</i>"]
+        PKI["PKI Hub<br/><i>Certificate Authority</i>"]
+        VPN["VPN Gateway<br/><i>Secure Access</i>"]
+    end
+
+    subgraph DEV["Development Environment"]
+        FN["fn-dev-01<br/><i>Serverless</i><br/>Cloud Run + ALB<br/>+ Cloud Armor"]
+        DP["dp-dev-01<br/><i>Data Platform</i><br/>GKE + ArgoCD<br/>+ BigQuery"]
+    end
+
+    ORG --> HUB
+    HUB --> DEV
+    DNS -.->|DNS Peering| DEV
+    VPN -.->|VPC Connectivity| DEV
+    PKI -.->|TLS Certificates| DEV
 ```
 
 - **DNS Hub** — Centralised DNS resolution with forwarding and peering
 - **Network Hub** — Shared network connectivity
 - **PKI Hub** — Certificate Authority Service for private TLS certificates
 - **VPN Gateway** — Secure access to cloud resources
-- **Development** — Three sub-environment patterns:
-  - **dev-01** — General-purpose project with all resource types
-  - **functions (fn-01)** — Serverless Cloud Run pattern with ALB and Cloud Armor
-  - **platform (dp-01)** — Data platform with private GKE, ArgoCD, and BigQuery
+- **Development** — Two sub-environment patterns:
+  - **functions (fn-dev-01)** — Serverless Cloud Run pattern with ALB and Cloud Armor
+  - **platform (dp-dev-01)** — Data platform with private GKE, ArgoCD, and BigQuery
 
 ### Configuration Hierarchy
 
@@ -90,9 +84,8 @@ Each level adds progressively more specific configuration, merged via `_common/b
 | Project | VPC CIDR | PSA Range | GKE Master |
 |---------|----------|-----------|------------|
 | vpn-gateway | 10.11.0.0/16 | — | — |
-| dev-01 | 10.10.0.0/16 | 10.10.200.0/24 | 172.16.0.0/28 |
-| fn-01 | 10.20.0.0/16 | 10.20.200.0/24 | — |
-| dp-01 | 10.30.0.0/16 | 10.30.200.0/24 | 172.16.0.48/28 |
+| fn-dev-01 | 10.20.0.0/16 | 10.20.200.0/24 | — |
+| dp-dev-01 | 10.30.0.0/16 | 10.30.200.0/24 | 172.16.0.48/28 |
 
 ## Repository Structure
 
@@ -124,18 +117,10 @@ terragrunt-gcp-org-automation/
 │           ├── env.hcl
 │           ├── folder/
 │           ├── folder-iam-bindings/
-│           ├── dev-01/                # General-purpose project
-│           │   ├── vpc-network/       # 5-subnet VPC
-│           │   ├── iam-bindings/
-│           │   ├── iam-service-accounts/
-│           │   ├── iam-workload-identity/
-│           │   ├── cloud-armor/
-│           │   ├── global/cloud-dns/
-│           │   └── europe-west2/      # Compute, SQL, Cloud Run, GKE, etc.
 │           ├── functions/             # Serverless pattern
-│           │   └── fn-01/             # Cloud Run + ALB + Cloud Armor
+│           │   └── fn-dev-01/             # Cloud Run + ALB + Cloud Armor
 │           └── platform/              # Data platform pattern
-│               └── dp-01/             # GKE + ArgoCD + BigQuery
+│               └── dp-dev-01/             # GKE + ArgoCD + BigQuery
 ├── root.hcl                           # Root configuration
 ├── QUICKSTART.md                      # Quick start guide
 └── CLAUDE.md                          # AI assistant instructions
@@ -184,7 +169,7 @@ For detailed instructions, see [Bootstrap Guide](docs/BOOTSTRAP.md), [QUICKSTART
 
 ```bash
 # Navigate to resource directory first
-cd live/non-production/development/dev-01/resource
+cd live/non-production/development/platform/dp-dev-01/resource
 
 # Standard workflow
 terragrunt init
@@ -287,7 +272,7 @@ inputs = {
 
 | Document | Description |
 |----------|-------------|
-| [Development Infrastructure](docs/DEVELOPMENT_INFRASTRUCTURE.md) | Development environment with three sub-environments |
+| [Development Infrastructure](docs/DEVELOPMENT_INFRASTRUCTURE.md) | Development environment with two sub-environments |
 | [Network Architecture](docs/NETWORK_ARCHITECTURE.md) | VPC design, subnets, and connectivity patterns |
 | [IP Allocation](docs/IP_ALLOCATION.md) | CIDR allocation across all projects |
 | [GitOps Architecture](docs/GITOPS_ARCHITECTURE.md) | ArgoCD and GitOps workflow patterns |

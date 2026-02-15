@@ -30,7 +30,7 @@ The template sets these defaults unless overridden in a service:
 
 | Input | Description | Example |
 | --- | --- | --- |
-| `project_id` | GCP project ID | `dev-01` |
+| `project_id` | GCP project ID | `dp-dev-01` |
 | `location` | Cloud Run region | `europe-west2` |
 | `service_name` | Cloud Run service name | `hello-cloud-run` |
 | `containers` | Container definitions (list) | See example below |

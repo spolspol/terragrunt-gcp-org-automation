@@ -43,7 +43,7 @@ Secret configurations are organized within the environment directories following
 live/
 └── non-production/
     └── development/
-        └── dev-01/
+        └── dp-dev-01/
             └── secrets/
                 ├── secrets.hcl               # Common secret configuration
                 ├── app-api-key/              # Individual secret

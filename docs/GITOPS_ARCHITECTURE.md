@@ -134,7 +134,7 @@ terragrunt-gcp-org-automation/
 ├── 📁 live/                       # Environment configurations
 │   ├── non-production/           # Non-production environments
 │   │   ├── development/         # Development environment
-│   │   │   └── dev-01/         # Development project
+│   │   │   └── dp-dev-01/         # Development project
 │   │   └── perimeter/          # Perimeter/DMZ environment
 │   └── production/             # Production environments
 │

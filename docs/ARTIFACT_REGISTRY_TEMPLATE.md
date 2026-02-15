@@ -37,7 +37,7 @@ Version pinned in `_common/common.hcl` as `module_versions.artifact_registry`.
 
 | Input | Type | Description | Example |
 |-------|------|-------------|---------|
-| `project_id` | string | GCP project ID | `"fn-01-a"` |
+| `project_id` | string | GCP project ID | `"fn-dev-01-a"` |
 | `repository_id` | string | Repository name | `"org-api-orchestrations"` |
 
 ## Optional Inputs
@@ -120,7 +120,7 @@ inputs = {
 
 ### Remote Repository (GHCR Proxy)
 
-Proxies container images from an external registry (e.g. GitHub Container Registry) and caches them locally. This is the pattern used by `org-api-orchestrations` in `fn-01`:
+Proxies container images from an external registry (e.g. GitHub Container Registry) and caches them locally. This is the pattern used by `org-api-orchestrations` in `fn-dev-01`:
 
 ```hcl
 inputs = {
@@ -226,10 +226,10 @@ The resource is automatically detected and deployed by the IaC Engine workflow w
 If the repository already exists in GCP, import it before applying:
 
 ```bash
-cd live/non-production/uat/functions/fn-01/artifact-registry/org-api-orchestrations
+cd live/non-production/uat/functions/fn-dev-01/artifact-registry/org-api-orchestrations
 
 terragrunt run import google_artifact_registry_repository.main \
-  projects/fn-01-a/locations/europe-west2/repositories/org-api-orchestrations
+  projects/fn-dev-01-a/locations/europe-west2/repositories/org-api-orchestrations
 ```
 
 ## Best Practices

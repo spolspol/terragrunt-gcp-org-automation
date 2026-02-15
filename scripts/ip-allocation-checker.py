@@ -239,7 +239,7 @@ class IPAllocationChecker:
                 print(f"  - dev-{len(dev_envs)+i+1:02d}: {candidate}")
             next_third += 1
 
-    def suggest_next_cluster(self, env: str = 'dev-01'):
+    def suggest_next_cluster(self, env: str = 'dp-dev-01'):
         """Suggest next available cluster allocation."""
         print(f"🔮 Next available allocations for {env}\n")
 
@@ -304,7 +304,7 @@ def main():
     elif command == "available":
         checker.show_available()
     elif command == "next":
-        env = sys.argv[2] if len(sys.argv) > 2 else 'dev-01'
+        env = sys.argv[2] if len(sys.argv) > 2 else 'dp-dev-01'
         checker.suggest_next_cluster(env)
     else:
         print(__doc__)

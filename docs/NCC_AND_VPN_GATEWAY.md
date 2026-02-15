@@ -114,7 +114,7 @@ Three VPC networks are currently connected as spokes to the NCC hub:
 | Spoke Name | VPC Network | CIDR Range | Project | Purpose |
 |------------|-------------|------------|---------|---------|
 | `vpn-gateway-spoke` | org-vpn-gateway-vpc | 10.11.0.0/16 | org-vpn-gateway | VPN access network |
-| `dev-01-spoke` | dev-01-vpc-network | 10.132.0.0/16 | dev-01 | Development environment |
+| `dp-dev-01-spoke` | dp-dev-01-vpc-network | 10.132.0.0/16 | dp-dev-01 | Development environment |
 | `data-staging-spoke` | data-staging-vpc-network | 10.10.0.0/20 | data-staging | Perimeter for external data |
 
 ### Export Policies
@@ -143,7 +143,7 @@ vpc_spokes = {
 #### Development Spoke
 ```hcl
 vpc_spokes = {
-  "dev-01-spoke" = {
+  "dp-dev-01-spoke" = {
     uri = dependency.dev01_vpc.outputs.network_id
     # Exclude public subnet
     exclude_export_ranges = ["10.132.16.0/21"]
@@ -280,8 +280,8 @@ The VPN Gateway implements comprehensive firewall rules across all projects:
 | **data-staging** | allow-admin-vpn-full | Admin pool full access |
 | **data-staging** | allow-perimeter-vpn-restricted | Perimeter pool limited access |
 | **data-staging** | deny-perimeter-vpn-other-ports | Block perimeter pool from SSH/HTTPS |
-| **dev-01** | deny-perimeter-pool-all | Block all perimeter pool access |
-| **dev-01** | allow-admin-vpn-full | Admin pool full access |
+| **dp-dev-01** | deny-perimeter-pool-all | Block all perimeter pool access |
+| **dp-dev-01** | allow-admin-vpn-full | Admin pool full access |
 
 ## Implementation Details
 
@@ -298,7 +298,7 @@ live/non-production/hub/
 │   │   ├── terragrunt.hcl
 │   │   └── dependencies:
 │   │       ├── vpn-gateway VPC
-│   │       ├── dev-01 VPC
+│   │       ├── dp-dev-01 VPC
 │   │       └── data-staging VPC
 │   └── ncc-spoke/                      # Legacy hub VPC spoke
 └── vpn-gateway/                        # VPN Gateway project
@@ -452,9 +452,9 @@ terragrunt run apply
 cd ../vpc-network
 terragrunt run apply
 
-# 3. Create other VPC networks (dev-01, data-staging)
+# 3. Create other VPC networks (dp-dev-01, data-staging)
 # These must exist before NCC hub creation
-cd ../../development/dev-01/vpc-network
+cd ../../development/dp-dev-01/vpc-network
 terragrunt run apply
 
 cd ../../perimeter/data-staging/vpc-network
@@ -805,7 +805,7 @@ dependencies {
   paths = [
     "../vpc-network",
     "../../../vpn-gateway/vpc-network",
-    "../../../development/dev-01/vpc-network",
+    "../../../development/dp-dev-01/vpc-network",
     "../../../perimeter/data-staging/vpc-network"
   ]
 }

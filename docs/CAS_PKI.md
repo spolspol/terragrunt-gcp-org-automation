@@ -254,7 +254,7 @@ service_account_roles = {
 
 | Cloud SQL Instance | Edition | CA Type | Notes |
 |--------------------|---------|---------|-------|
-| dp-01-postgres-main | ENTERPRISE | Google-managed | Cost optimisation (~$15/month) |
+| dp-dev-01-postgres-main | ENTERPRISE | Google-managed | Cost optimisation (~$15/month) |
 
 > **Note:** The UAT Cloud SQL instance was originally planned to use customer-managed CA from `org-uat-pool-01`, but switched to Google-managed CA due to ENTERPRISE_PLUS edition cost (~$200+/month).
 

@@ -68,8 +68,8 @@ inputs = {
 
 | Input | Type | Description | Example |
 |-------|------|-------------|---------|
-| `project_id` | string | GCP project ID | `"fn-01-a"` |
-| `name` | string | Security policy name | `"fn-01-cloud-run-lb-policy"` |
+| `project_id` | string | GCP project ID | `"fn-dev-01-a"` |
+| `name` | string | Security policy name | `"fn-dev-01-cloud-run-lb-policy"` |
 | `security_rules` | map | Allow/deny rules with priorities | See below |
 
 ## Security Rules Structure
@@ -192,7 +192,7 @@ The `load-balancer` resource type depends on `cloud-armor`, so the CI/CD engine 
 
 - **Default deny**: Always set `default_rule_action = "deny(403)"` and explicitly allow known IPs.
 - **CIDR precision**: Use `/32` for individual IPs to avoid accidentally allowing adjacent addresses.
-- **Separate policies per LB**: Name policies to match their load balancer (e.g. `fn-01-cloud-run-lb-policy`).
+- **Separate policies per LB**: Name policies to match their load balancer (e.g. `fn-dev-01-cloud-run-lb-policy`).
 - **Document IP sources**: Comment each CIDR with its purpose (office, VPN, partner).
 - **Webhook exceptions**: Leave webhook backends without a policy and rely on HMAC/API-key validation.
 - **Priority spacing**: Use priorities in increments of 1000 to leave room for future rules.
@@ -206,7 +206,7 @@ If a request returns 403, determine whether the block is from Cloud Armor or Clo
 ```bash
 # Check Cloud Armor logs (shows matched rule)
 gcloud logging read 'resource.type="http_load_balancer" AND jsonPayload.enforcedSecurityPolicy.name!=""' \
-  --project=fn-01-a --limit=10
+  --project=fn-dev-01-a --limit=10
 
 # If the log shows enforcedSecurityPolicy.outcome="DENY", Cloud Armor blocked the request.
 # If there's no Cloud Armor log entry, the 403 is from Cloud Run IAM (missing allUsers invoker).
@@ -215,14 +215,14 @@ gcloud logging read 'resource.type="http_load_balancer" AND jsonPayload.enforced
 ### Verify Policy Rules
 
 ```bash
-gcloud compute security-policies describe fn-01-cloud-run-lb-policy \
-  --project=fn-01-a
+gcloud compute security-policies describe fn-dev-01-cloud-run-lb-policy \
+  --project=fn-dev-01-a
 ```
 
 ### Test from Allowed IP
 
 ```bash
-curl -I https://api.fn-01.uat.example.io/api/health
+curl -I https://api.fn-dev-01.uat.example.io/api/health
 # Expected: 200 or application-level response (not 403)
 ```
 
@@ -230,7 +230,7 @@ curl -I https://api.fn-01.uat.example.io/api/health
 
 ```bash
 # From a non-allowed network:
-curl -I https://api.fn-01.uat.example.io/api/health
+curl -I https://api.fn-dev-01.uat.example.io/api/health
 # Expected: 403 Forbidden
 ```
 

@@ -34,19 +34,17 @@ locals {
   # Wrap entire read chain in try() to avoid HCL conditional type-mismatch
   # errors (read_terragrunt_config returns a complex object that can't match
   # a simple map literal in a ternary).
-  _region_locals  = try(read_terragrunt_config(find_in_parent_folders("region.hcl")).locals, {})
-  _secrets_locals = try(read_terragrunt_config(find_in_parent_folders("secrets.hcl")).locals, {})
-  _compute_locals = try(read_terragrunt_config(find_in_parent_folders("compute.hcl")).locals, {})
+  _region_locals = try(read_terragrunt_config(find_in_parent_folders("region.hcl")).locals, {})
 
   # ── Single merged map ───────────────────────────────────────────────────────
   # Replaces the per-file merge() calls. Later entries override earlier ones.
+  # Domain-specific configs (secrets.hcl, compute.hcl) are loaded directly by
+  # resources that need them via their own include blocks with expose = true.
   merged = merge(
     local.account_vars.locals,
     local._env_locals,
     local._project_locals,
     local._region_locals,
-    local._secrets_locals,
-    local._compute_locals,
     local.common_vars.locals
   )
 

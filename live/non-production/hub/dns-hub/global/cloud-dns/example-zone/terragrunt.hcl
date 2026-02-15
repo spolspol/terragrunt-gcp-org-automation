@@ -53,7 +53,7 @@ inputs = {
       name    = "development"
       type    = "CNAME"
       ttl     = 300
-      records = ["cluster-02.ew2.dev-01.dev.example.io."]
+      records = ["cluster-02.ew2.dp-dev-01.dev.example.io."]
     }
   ]
 

@@ -124,9 +124,9 @@ jobs:
 
             # Determine project ID and bucket based on project path
             case "$project" in
-              "dev-01")
+              "dp-dev-01")
                 # Development environment project
-                PROJECT_ID="org-dev-01-a"
+                PROJECT_ID="org-dp-dev-01-a"
                 ;;
               "vpn-gateway")
                 # Hub VPN Gateway project
@@ -219,8 +219,8 @@ jobs:
             project="${path_parts[3]}"
 
             case "$project" in
-              "dev-01")
-                PROJECT_ID="org-dev-01-a"
+              "dp-dev-01")
+                PROJECT_ID="org-dp-dev-01-a"
                 gcloud config set project "$PROJECT_ID"
                 BUCKET_NAME=$(gsutil ls -p "$PROJECT_ID" | grep "gs://.*vm-scripts" | head -1 | sed 's|gs://||' | sed 's|/$||')
                 if [[ -z "$BUCKET_NAME" ]]; then

@@ -7,6 +7,11 @@ include "base" {
   expose = true
 }
 
+include "secrets_common" {
+  path   = find_in_parent_folders("secrets.hcl")
+  expose = true
+}
+
 include "secret_template" {
   path           = "${get_repo_root()}/_common/templates/secret_manager.hcl"
   merge_strategy = "deep"
@@ -48,7 +53,7 @@ inputs = {
 
   labels = {
     "${local.secret_name}" = merge(
-      include.base.locals.merged.common_secret_labels,
+      include.secrets_common.locals.common_secret_labels,
       {
         secret_type = "password"
         purpose     = "vpn-admin"

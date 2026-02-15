@@ -42,7 +42,7 @@ VPC Network configurations are located within the region directories following t
 live/
 └── non-production/
     └── development/
-        └── dev-01/
+        └── dp-dev-01/
             └── europe-west2/
                 └── vpc-network/               # VPC Network configuration
                     └── terragrunt.hcl

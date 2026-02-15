@@ -43,7 +43,7 @@ This document describes the primary network connectivity architecture for the re
 Two core projects implement the hub of this connectivity pattern:
 
 1. org-vpn-gateway: Hosts the VPN server and the star center of VPC peerings
-2. Peered projects: dev-01 (10.132.0.0/16), dp-01 (10.156.0.0/16)
+2. Peered projects: dp-dev-01 (10.132.0.0/16), dp-dev-01 (10.156.0.0/16)
 
 ```mermaid
 graph TB
@@ -54,16 +54,16 @@ graph TB
     ROUTER["Cloud Router"]
   end
 
-  DEV["dev-01 VPC\n10.132.0.0/16"]
-  UAT["dp-01 VPC\n10.156.0.0/16"]
+  DEV["dp-dev-01 VPC\n10.132.0.0/16"]
+  UAT["dp-dev-01 VPC\n10.156.0.0/16"]
 
   VPN_SERVER --> POOLS
   Hub --- DEV
   Hub --- UAT
 ```
 
-- Star peering: vpn-gateway <-> dev-01, vpn-gateway <-> dp-01
-- Non-transitive: dev-01 does not transitively reach other VPCs via peering
+- Star peering: vpn-gateway <-> dp-dev-01, vpn-gateway <-> dp-dev-01
+- Non-transitive: dp-dev-01 does not transitively reach other VPCs via peering
 - Access control: VPC firewall rules using the VPN pool CIDRs
 
 ## VPC Peering
@@ -83,8 +83,8 @@ graph TB
 
 ### Resource Layout
 - Live peering resources (one per peer VPC):
-  - `live/non-production/hub/vpn-gateway/global/networking/vpc-peering/dev-01/terragrunt.hcl`
-  - `live/non-production/hub/vpn-gateway/global/networking/vpc-peering/dp-01/terragrunt.hcl`
+  - `live/non-production/hub/vpn-gateway/global/networking/vpc-peering/dp-dev-01/terragrunt.hcl`
+  - `live/non-production/hub/vpn-gateway/global/networking/vpc-peering/dp-dev-01/terragrunt.hcl`
 - Terragrunt pattern (example):
 
 ```hcl
@@ -157,18 +157,18 @@ inputs = {
 - Environment: `source setup_env.sh` (and `setup_secrets_env.sh` when needed)
 
 ### Order of operations (validate/plan/apply)
-1) Ensure VPC networks exist in vpn-gateway, dev-01, and other peer projects
+1) Ensure VPC networks exist in vpn-gateway, dp-dev-01, and other peer projects
 2) From peering directories:
 
 ```bash
-# dev-01 peering
-cd live/non-production/hub/vpn-gateway/global/networking/vpc-peering/dev-01
+# dp-dev-01 peering
+cd live/non-production/hub/vpn-gateway/global/networking/vpc-peering/dp-dev-01
 terragrunt run validate
 terragrunt run plan
 terragrunt run apply --auto-approve
 
-# dp-01 peering
-cd ../dp-01
+# dp-dev-01 peering
+cd ../dp-dev-01
 terragrunt run validate
 terragrunt run plan
 terragrunt run apply --auto-approve
@@ -183,7 +183,7 @@ gcloud compute network peerings list --project=org-vpn-gateway
 
 # Describe a specific peering
 gcloud compute network peerings describe \
-  network-peering-dev-01 \
+  network-peering-dp-dev-01 \
   --network=org-vpn-gateway-vpc \
   --project=org-vpn-gateway
 
@@ -192,7 +192,7 @@ gcloud compute routes list --project=org-vpn-gateway --filter="network=org-vpn-g
 ```
 
 Connectivity tests from a VPN client (10.11.101.0/24 admin pool):
-- Ping/SSH/RDP allowed targets in dev-01 and other peer projects according to firewall policy
+- Ping/SSH/RDP allowed targets in dp-dev-01 and other peer projects according to firewall policy
 - Confirm perimeter-restricted pool (10.11.111.0/24) cannot reach non-perimeter targets
 
 ### Troubleshooting
