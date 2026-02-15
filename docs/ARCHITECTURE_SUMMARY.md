@@ -12,11 +12,11 @@ This document outlines the architectural principles and design rationale behind 
 - **Operational excellence** through automation and standardization
 
 ### Technology Stack
-- **OpenTofu 1.9.1**: Infrastructure provisioning engine
-- **Terragrunt 0.80.2**: Configuration management and orchestration
+- **OpenTofu 1.x**: Infrastructure provisioning engine
+- **Terragrunt 0.x**: Configuration management and orchestration
 - **Google Cloud Platform**: Cloud infrastructure provider
 - **GitHub Actions**: CI/CD automation
-- **ArgoCD 8.1.3**: GitOps continuous delivery platform
+- **ArgoCD 3.x**: GitOps continuous delivery platform (Helm chart 9.x)
 - **Google Secret Manager**: Secrets management
 - **External Secrets Operator**: Kubernetes secrets synchronization
 

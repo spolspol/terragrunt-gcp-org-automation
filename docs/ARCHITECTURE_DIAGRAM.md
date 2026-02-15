@@ -6,8 +6,9 @@ This document provides a comprehensive visual representation of the GCP infrastr
 
 The infrastructure implements a hierarchical architecture with:
 - **Organizational Structure**: GCP Organization with folder hierarchy
-- **Environment Separation**: Development, perimeter, and production environments  
-- **Network Architecture**: VPC with NAT Gateway for secure egress
+- **Environment Separation**: Development, perimeter, and production environments
+- **Network Architecture**: Fully private VPC with egress-only internet access via NAT
+- **VPN Access**: Users connect to private resources exclusively through a hub VPN Gateway
 - **Compute Resources**: GKE clusters, VMs, and SQL Server
 - **GitOps Platform**: ArgoCD for continuous delivery
 - **Security Components**: Secret Manager, IAM bindings, and firewall rules
@@ -35,7 +36,7 @@ graph TB
 
     %% GCP Organization Structure
     subgraph GCPOrg["🏢 GCP Organization (example-org.com)"]
-        
+
         %% Bootstrap Foundation
         subgraph Bootstrap["📁 Bootstrap Folder"]
             subgraph BootstrapProj["🗂️ org-automation Project"]
@@ -43,57 +44,64 @@ graph TB
                 OrgSA["🔑 Org Service Account<br/>tofu-sa-org@"]
             end
         end
-        
+
+        %% Hub Infrastructure
+        subgraph Hub["📁 Hub Folder"]
+            subgraph VPNGateway["🗂️ vpn-gateway Project"]
+                VPNVPC["VPN Gateway VPC"]
+                VPNServer["VPN Server"]
+                VPCPeering["VPC Peering"]
+            end
+        end
+
         %% Development Environment
         subgraph Development["📁 Development Folder"]
-            subgraph DevProj["🗂️ dp-dev-01 Project"]
-                
+            subgraph DevProj["🗂️ dp-dev-01 Project (Fully Private)"]
+
                 %% Core Networking
-                subgraph Network["🌐 Network Layer"]
+                subgraph Network["🌐 Network Layer (Private Only)"]
                     VPC["VPC Network<br/>10.132.0.0/16"]
-                    
+
                     subgraph Subnets["Subnet Configuration"]
                         DMZ["DMZ: 10.132.0.0/21"]
                         Private["Private: 10.132.8.0/21"]
-                        Public["Public: 10.132.16.0/21"]
                         GKESub["GKE: 10.132.64.0/18"]
                     end
-                    
-                    subgraph NATGateway["NAT Gateway Stack"]
+
+                    subgraph NATGateway["NAT Gateway (Egress Only)"]
                         Router["Cloud Router<br/>BGP ASN: 64514"]
                         CloudNAT["Cloud NAT"]
                         NATExtIP["NAT External IP"]
                         Router --> CloudNAT
                         CloudNAT --> NATExtIP
                     end
-                    
+
                     VPC --> Subnets
                     Subnets --> Router
                 end
-                
+
                 %% Compute Resources
                 subgraph Compute["💻 Compute Resources"]
                     subgraph GKECluster["GKE Infrastructure"]
                         GKE["GKE Cluster<br/>cluster-01"]
                         ArgoCD["ArgoCD Bootstrap"]
-                        GKEExtIP["Ingress External IP"]
                         GKE --> ArgoCD
                     end
-                    
+
                     subgraph VirtualMachines["Virtual Machines"]
                         LinuxVM["Linux Server VM"]
                         WebVM["Web Server VM"]
                         SQLVM["SQL Server VM"]
                     end
                 end
-                
+
                 %% Security Layer
                 subgraph Security["🔒 Security Components"]
                     Secrets["Secret Manager<br/>13 secrets"]
                     IAM["IAM Bindings"]
                     Firewall["Firewall Rules"]
                 end
-                
+
                 %% Storage Layer
                 subgraph Storage["💾 Storage Services"]
                     GCS["Cloud Storage Buckets"]
@@ -104,38 +112,44 @@ graph TB
         end
     end
 
-    %% Primary Connections (Simplified)
-    
-    %% External Connections
-    NATExtIP --> Internet
-    GKEExtIP --> Internet
-    Users --> GKEExtIP
-    GitHub -.-> ArgoCD
-    
-    %% Internal Network Flow  
+    %% User Access (VPN Only)
+    Users -->|"VPN tunnel"| VPNServer
+    VPNServer --> VPNVPC
+    VPNVPC -->|"VPC Peering"| VPC
+
+    %% Egress Only — No inbound from Internet
+    NATExtIP -->|"egress only"| Internet
+
+    %% GitOps — ArgoCD pulls from GitHub via NAT egress
+    ArgoCD -->|"pull via NAT"| CloudNAT
+    GitHub -.->|"synced via egress"| ArgoCD
+
+    %% Internal Network Flow
     VirtualMachines --> CloudNAT
     GKE --> CloudNAT
-    
+
     %% Security Relationships
     Secrets -.-> ArgoCD
     Secrets -.-> VirtualMachines
     IAM -.-> Compute
     Firewall --> Network
-    
+
     %% Data Flow
     StateStorage -.-> Development
     CloudSQL -.-> VirtualMachines
-    
+
     %% Styling
     classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px
     classDef org fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef hub fill:#e0f2f1,stroke:#00695c,stroke-width:2px
     classDef network fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     classDef compute fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
     classDef security fill:#fce4ec,stroke:#c2185b,stroke-width:2px
     classDef storage fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
-    
+
     class External external
     class GCPOrg,Bootstrap,Development org
+    class Hub,VPNGateway hub
     class Network,VPC,NATGateway network
     class Compute,GKECluster,VirtualMachines compute
     class Security security
@@ -148,33 +162,35 @@ graph TB
 
 ```mermaid
 flowchart LR
-    subgraph VPCDetail["VPC Network (10.132.0.0/16)"]
-        subgraph PrimaryNets["Primary Subnets"]
+    U[Users] -->|"VPN tunnel"| VPN[VPN Gateway<br/>Hub Project]
+    VPN -->|"VPC Peering"| VPCDetail
+
+    subgraph VPCDetail["dp-dev-01 VPC (Fully Private — 10.132.0.0/16)"]
+        subgraph PrimaryNets["Private Subnets"]
             D[DMZ<br/>10.132.0.0/21]
             P[Private<br/>10.132.8.0/21]
-            PU[Public<br/>10.132.16.0/21]
             G[GKE<br/>10.132.64.0/18]
         end
-        
+
         subgraph SecondaryNets["GKE Secondary Ranges"]
             POD[Pods<br/>10.132.128.0/21]
             SVC[Services<br/>10.132.192.0/24]
         end
-        
+
         G -.-> POD
         G -.-> SVC
     end
-    
-    subgraph EgressPath["Egress Path"]
+
+    subgraph EgressPath["Egress Only Path"]
         CR[Cloud Router]
         CN[Cloud NAT]
         EIP[External IP]
         CR --> CN --> EIP
     end
-    
+
     PrimaryNets --> CR
-    EIP --> I[Internet]
-    
+    EIP -->|"egress only"| I[Internet]
+
     style VPCDetail fill:#e3f2fd
     style EgressPath fill:#fff3e0
 ```
@@ -304,11 +320,10 @@ graph LR
 pie title "IP Space Utilization (dp-dev-01)"
     "DMZ Subnet" : 2048
     "Private Subnet" : 2048
-    "Public Subnet" : 2048
     "GKE Primary" : 16384
     "GKE Pods" : 2048
     "GKE Services" : 256
-    "Reserved" : 31744
+    "Reserved" : 33792
 ```
 
 ## Deployment Flow
@@ -316,19 +331,22 @@ pie title "IP Space Utilization (dp-dev-01)"
 ```mermaid
 sequenceDiagram
     participant User
+    participant VPN as VPN Gateway
     participant GitHub
     participant Terragrunt
-    participant GCP
+    participant GCP as GCP (dp-dev-01)
     participant ArgoCD
-    
+
     User->>GitHub: Push infrastructure code
     GitHub->>Terragrunt: Trigger CI/CD
     Terragrunt->>GCP: Apply infrastructure
     GCP-->>Terragrunt: Resources created
     Terragrunt->>ArgoCD: Deploy bootstrap
-    ArgoCD->>GitHub: Sync applications
+    ArgoCD->>GitHub: Sync applications (via NAT egress)
     ArgoCD->>GCP: Deploy workloads
-    GCP-->>User: Infrastructure ready
+    User->>VPN: Connect via VPN
+    VPN->>GCP: Route to private VPC (peering)
+    GCP-->>User: Access private resources
 ```
 
 ## Key Features Highlighted
@@ -339,8 +357,9 @@ sequenceDiagram
 - Logical resource grouping
 
 ### 2. **Network Security**
-- Private subnets with NAT Gateway
-- Centralized egress control
+- Fully private VPC — no public ingress to dp-dev-01
+- User access exclusively via VPN through hub VPN Gateway with VPC peering
+- Egress-only internet access through Cloud NAT for outbound traffic (image pulls, updates)
 - Firewall rules and Private Service Access
 
 ### 3. **GitOps Integration**

@@ -47,7 +47,7 @@ inputs = {
   cluster_endpoint    = dependency.cluster.outputs.endpoint
   cluster_ca_cert     = dependency.cluster.outputs.ca_certificate
 
-  argocd_chart_version = "7.7.6"
+  argocd_chart_version = "9.4.2"
 
   bootstrap_repo = {
     url      = "https://github.com/example-org/gke-argocd-cluster-gitops-poc.git"

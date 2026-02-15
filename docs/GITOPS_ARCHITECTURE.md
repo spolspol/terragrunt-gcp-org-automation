@@ -47,14 +47,14 @@ GitOps represents a paradigm shift in infrastructure and application management,
 | Component | Version | Purpose |
 |-----------|---------|---------|
 | **Infrastructure Layer** | | |
-| OpenTofu | v1.9.1 | Infrastructure provisioning |
-| Terragrunt | v0.80.2 | DRY configuration management |
+| OpenTofu | 1.x | Infrastructure provisioning |
+| Terragrunt | 0.x | DRY configuration management |
 | GitHub Actions | Latest | CI/CD automation |
-| Google Provider | v6.14.1 | GCP resource management |
+| Google Provider | 6.x | GCP resource management |
 | **Application Layer** | | |
-| ArgoCD | v8.1.3 | GitOps continuous delivery |
-| External Secrets Operator | v0.9.11 | Secret synchronization |
-| GKE | v37.0.0 | Kubernetes platform |
+| ArgoCD | 3.x (chart 9.x) | GitOps continuous delivery |
+| External Secrets Operator | 0.x | Secret synchronization |
+| GKE | 37.x | Kubernetes platform |
 | Helm | v3.x | Package management |
 | **Core** | | |
 | Git | Latest | Single source of truth |
