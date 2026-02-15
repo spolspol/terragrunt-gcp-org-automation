@@ -59,24 +59,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
-include "account" {
-  path = find_in_parent_folders("account.hcl")
-}
-
-include "env" {
-  path = find_in_parent_folders("env.hcl")
-}
-
-include "project" {
-  path = find_in_parent_folders("project.hcl")
-}
-
-include "common" {
-  path = "${get_repo_root()}/_common/common.hcl"
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
 include "iam_template" {
-  path = "${get_repo_root()}/_common/templates/iam_bindings.hcl"
+  path           = "${get_repo_root()}/_common/templates/iam_bindings.hcl"
+  merge_strategy = "deep"
 }
 
 # Dependency on the project

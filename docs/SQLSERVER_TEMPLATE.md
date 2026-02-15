@@ -90,32 +90,18 @@ locals {
 ### 2. Basic Implementation
 
 ```hcl
-include {
+include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
-include "account" {
-  path = find_in_parent_folders("account.hcl")
-}
-
-include "env" {
-  path = find_in_parent_folders("env.hcl")
-}
-
-include "project" {
-  path = find_in_parent_folders("project.hcl")
-}
-
-include "region" {
-  path = find_in_parent_folders("region.hcl")
-}
-
-include "common" {
-  path = "${get_terragrunt_dir()}/../../../../../../_common/common.hcl"
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
 include "sqlserver_template" {
-  path = "${get_terragrunt_dir()}/../../../../../../_common/templates/sqlserver.hcl"
+  path           = "${get_repo_root()}/_common/templates/sqlserver.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "vpc-network" {
@@ -146,33 +132,18 @@ dependency "project" {
 }
 
 locals {
-  account_vars = read_terragrunt_config(find_in_parent_folders("account.hcl"))
-  env_vars     = read_terragrunt_config(find_in_parent_folders("env.hcl"))
-  project_vars = read_terragrunt_config(find_in_parent_folders("project.hcl"))
-  region_vars  = read_terragrunt_config(find_in_parent_folders("region.hcl"))
-  common_vars  = read_terragrunt_config("${get_terragrunt_dir()}/../../../../../../_common/common.hcl")
-  
-  merged_vars  = merge(
-    local.account_vars.locals,
-    local.env_vars.locals,
-    local.project_vars.locals,
-    local.region_vars.locals,
-    local.common_vars.locals
-  )
-  
-  name_prefix = local.merged_vars.name_prefix != "" ? local.merged_vars.name_prefix : "org"
-  selected_env_config = lookup(local.merged_vars.sqlserver_settings, local.merged_vars.environment_type, {})
+  name_prefix = include.base.locals.merged.name_prefix != "" ? include.base.locals.merged.name_prefix : "org"
+  selected_env_config = lookup(include.base.locals.merged.sqlserver_settings, include.base.locals.merged.environment_type, {})
 }
 
 inputs = merge(
-  read_terragrunt_config("${get_terragrunt_dir()}/../../../../../../_common/templates/sqlserver.hcl").inputs,
-  local.merged_vars,
+  include.base.locals.merged,
   local.selected_env_config,
   {
-    name        = replace("${local.name_prefix}-${local.merged_vars.project}-sqlserver-01", "_", "-")
+    name        = replace("${local.name_prefix}-${include.base.locals.merged.project}-sqlserver-01", "_", "-")
     project_id  = dependency.project.outputs.project_id
-    region      = local.merged_vars.region
-    environment_type = local.merged_vars.environment_type
+    region      = include.base.locals.region
+    environment_type = include.base.locals.merged.environment_type
 
     # Use private networking for SQL Server with private service access
     ip_configuration = merge(
@@ -204,13 +175,13 @@ inputs = merge(
     user_labels = merge(
       {
         component   = "sqlserver"
-        environment = local.merged_vars.environment
-        environment_type = local.merged_vars.environment_type
+        environment = include.base.locals.merged.environment
+        environment_type = include.base.locals.merged.environment_type
         name_prefix = local.name_prefix
       },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {}),
-      try(local.merged_vars.project_labels, {})
+      try(include.base.locals.merged.org_labels, {}),
+      try(include.base.locals.merged.env_labels, {}),
+      try(include.base.locals.merged.project_labels, {})
     )
   }
 )

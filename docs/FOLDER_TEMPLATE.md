@@ -54,45 +54,37 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
-include "folder_template" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/folder.hcl"
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
-locals {
-  merged_vars = merge(
-    try(read_terragrunt_config(find_in_parent_folders("account.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("env.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals, {})
+include "folder_template" {
+  path           = "${get_repo_root()}/_common/templates/folder.hcl"
+  merge_strategy = "deep"
+}
+
+inputs = {
+  folder_name = "${include.base.locals.merged.name_prefix}-${include.base.locals.environment}"
+  parent      = try(include.base.locals.merged.organization_id, "organizations/mock-org-id")
+
+  # Folder IAM configuration
+  folder_iam_members = {
+    "roles/resourcemanager.folderAdmin" = [
+      "group:devops@example.com"
+    ]
+    "roles/resourcemanager.folderViewer" = [
+      "group:developers@example.com"
+    ]
+  }
+
+  folder_labels = merge(
+    include.base.locals.standard_labels,
+    {
+      component = "folder"
+    }
   )
 }
-
-inputs = merge(
-  try(read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/folder.hcl").inputs, {}),
-  local.merged_vars,
-  {
-    folder_name = "${local.merged_vars.name_prefix}-${local.merged_vars.environment}"
-    parent      = try(local.merged_vars.organization_id, "organizations/mock-org-id")
-    
-    # Folder IAM configuration
-    folder_iam_members = {
-      "roles/resourcemanager.folderAdmin" = [
-        "group:devops@example.com"
-      ]
-      "roles/resourcemanager.folderViewer" = [
-        "group:developers@example.com"
-      ]
-    }
-    
-    folder_labels = merge(
-      {
-        component   = "folder"
-        environment = try(local.merged_vars.environment, "unknown")
-      },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {})
-    )
-  }
-)
 ```
 
 ### Advanced Usage
@@ -104,7 +96,7 @@ inputs = merge(
   # ... other configuration ...
   {
     # Create nested folder structure
-    folder_name = "${local.merged_vars.name_prefix}-${local.merged_vars.environment}-workloads"
+    folder_name = "${include.base.locals.merged.name_prefix}-${include.base.locals.environment}-workloads"
     parent      = "folders/123456789"  # Parent folder ID
     
     # Organization policies

@@ -63,8 +63,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "secret_manager_template" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/secret_manager.hcl"
+  path           = "${get_repo_root()}/_common/templates/secret_manager.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "project" {
@@ -77,44 +83,33 @@ dependency "project" {
 }
 
 locals {
-  merged_vars = merge(
-    try(read_terragrunt_config(find_in_parent_folders("account.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("env.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("project.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals, {})
-  )
-  
   secret_name = basename(get_terragrunt_dir())
 }
 
-inputs = merge(
-  try(read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/secret_manager.hcl").inputs, {}),
-  local.merged_vars,
-  {
-    project_id = try(dependency.project.outputs.project_id, "mock-project-id")
-    
-    secrets = [
-      {
-        name        = local.secret_name
-        secret_data = "initial-secret-value"
-        labels = {
-          environment = local.merged_vars.environment
-          purpose     = "application-config"
-        }
-      }
-    ]
-    
-    # IAM bindings for secret access
-    secret_bindings = {
-      "${local.secret_name}" = {
-        members = [
-          "serviceAccount:${local.merged_vars.project_service_account}"
-        ]
-        role = "roles/secretmanager.secretAccessor"
+inputs = {
+  project_id = try(dependency.project.outputs.project_id, "mock-project-id")
+
+  secrets = [
+    {
+      name        = local.secret_name
+      secret_data = "initial-secret-value"
+      labels = {
+        environment = include.base.locals.environment
+        purpose     = "application-config"
       }
     }
+  ]
+
+  # IAM bindings for secret access
+  secret_bindings = {
+    "${local.secret_name}" = {
+      members = [
+        "serviceAccount:${include.base.locals.merged.project_service_account}"
+      ]
+      role = "roles/secretmanager.secretAccessor"
+    }
   }
-)
+}
 ```
 
 ### Advanced Usage
@@ -223,8 +218,8 @@ locals {
     # Common labels for all secrets
     common_labels = {
       managed_by  = "terragrunt"
-      environment = try(local.merged_vars.environment, "unknown")
-      project     = try(local.merged_vars.project, "unknown")
+      environment = try(include.base.locals.environment, "unknown")
+      project     = try(include.base.locals.merged.project, "unknown")
     }
   }
 }

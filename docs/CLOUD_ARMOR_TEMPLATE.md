@@ -50,12 +50,7 @@ The template sets the policy type to `CLOUD_ARMOR` and defaults to `deny(403)`:
 
 ```hcl
 terraform {
-  source = "git::https://github.com/GoogleCloudPlatform/terraform-google-cloud-armor.git?ref=${local.module_versions.cloud_armor}"
-}
-
-locals {
-  common_vars     = read_terragrunt_config("${get_repo_root()}/_common/common.hcl")
-  module_versions = local.common_vars.locals.module_versions
+  source = "git::https://github.com/GoogleCloudPlatform/terraform-google-cloud-armor.git?ref=${include.base.locals.module_versions.cloud_armor}"
 }
 
 inputs = {
@@ -63,6 +58,8 @@ inputs = {
   default_rule_action = "deny(403)"
 }
 ```
+
+> **Note**: The template no longer needs manual `locals` to read `common.hcl`. Module versions are available via `include.base.locals.module_versions` when `base.hcl` is included with `expose = true` in the resource file.
 
 ## Required Inputs
 

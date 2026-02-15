@@ -170,12 +170,7 @@ GSA names follow the pattern: `{cluster-id}-{workload-name}`
 # Uses terraform-google-kubernetes-engine workload-identity submodule
 
 terraform {
-  source = "git::https://github.com/terraform-google-modules/terraform-google-kubernetes-engine.git//modules/workload-identity?ref=${local.module_versions.gke}"
-}
-
-locals {
-  common_vars     = read_terragrunt_config(find_in_parent_folders("_common/common.hcl"))
-  module_versions = local.common_vars.locals.module_versions
+  source = "git::https://github.com/terraform-google-modules/terraform-google-kubernetes-engine.git//modules/workload-identity?ref=${include.base.locals.module_versions.gke}"
 }
 
 inputs = {
@@ -188,6 +183,8 @@ inputs = {
   roles = []
 }
 ```
+
+> **Note**: The template no longer needs manual `locals` to read `common.hcl`. Module versions are available via `include.base.locals.module_versions` when `base.hcl` is included with `expose = true` in the resource file.
 
 ### Individual WI Resource: `iam-workload-identity/cluster-01-argocd-server/terragrunt.hcl`
 

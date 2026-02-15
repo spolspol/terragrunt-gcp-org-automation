@@ -94,8 +94,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "instance_template" {
-  path = "${get_terragrunt_dir()}/path/to/_common/templates/instance_template.hcl"
+  path           = "${get_repo_root()}/_common/templates/instance_template.hcl"
+  merge_strategy = "deep"
 }
 
 include "compute_common" {
@@ -103,29 +109,21 @@ include "compute_common" {
 }
 
 locals {
-  merged_vars = merge(
-    read_terragrunt_config(find_in_parent_folders("account.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("env.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("project.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals
-  )
-  
-  selected_env_config = lookup(local.merged_vars.compute_instance_settings, local.merged_vars.environment_type, {})
+  selected_env_config = lookup(include.base.locals.merged.compute_instance_settings, include.base.locals.merged.environment_type, {})
 }
 
 inputs = merge(
-  read_terragrunt_config("path/to/_common/templates/instance_template.hcl").inputs,
-  local.merged_vars,
+  include.base.locals.merged,
   local.selected_env_config,
   {
     # Basic template configuration
-    name_prefix = "${local.merged_vars.name_prefix}-${local.merged_vars.project}-vm-name"
-    project_id  = "${local.merged_vars.name_prefix}-${local.merged_vars.project_id}"
+    name_prefix = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project}-vm-name"
+    project_id  = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project_id}"
     
     # Network configuration
-    network            = "${local.merged_vars.name_prefix}-${local.merged_vars.project}-vpc-01"
-    subnetwork         = "${local.merged_vars.name_prefix}-${local.merged_vars.project}-subnet-01"
-    subnetwork_project = "${local.merged_vars.name_prefix}-${local.merged_vars.project_id}"
+    network            = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project}-vpc-01"
+    subnetwork         = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project}-subnet-01"
+    subnetwork_project = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project_id}"
     
     # Boot disk configuration
     source_image_family  = "debian-12"
@@ -139,7 +137,7 @@ inputs = merge(
     
     # Option 2: Use shared project service account (legacy)
     # service_account = {
-    #   email  = local.merged_vars.project_service_account
+    #   email  = include.base.locals.merged.project_service_account
     #   scopes = local.selected_env_config.scopes
     # }
     
@@ -151,7 +149,7 @@ inputs = merge(
         
         # Download VM scripts from GCS bucket (if applicable)
         VM_TYPE="vm-name-01"  # Match the directory name
-        SCRIPTS_BUCKET="${local.merged_vars.name_prefix}-${local.merged_vars.project_name}-vm-scripts"
+        SCRIPTS_BUCKET="${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project_name}-vm-scripts"
         SCRIPTS_DIR="/opt/scripts"
         
         # Create scripts directory
@@ -188,9 +186,9 @@ inputs = merge(
         instance = "vm-name"
         purpose  = "vm-purpose"
       },
-      local.merged_vars.org_labels,
-      local.merged_vars.env_labels,
-      local.merged_vars.project_labels
+      include.base.locals.merged.org_labels,
+      include.base.locals.merged.env_labels,
+      include.base.locals.merged.project_labels
     )
   }
 )
@@ -203,8 +201,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "compute_template" {
-  path = "path/to/_common/templates/compute_instance.hcl"
+  path           = "${get_repo_root()}/_common/templates/compute_instance.hcl"
+  merge_strategy = "deep"
 }
 
 include "compute_common" {
@@ -238,25 +242,17 @@ dependency "project" {
 }
 
 locals {
-  merged_vars = merge(
-    read_terragrunt_config(find_in_parent_folders("account.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("env.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("project.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals
-  )
-  
-  selected_env_config = lookup(local.merged_vars.compute_instance_settings, local.merged_vars.environment_type, {})
+  selected_env_config = lookup(include.base.locals.merged.compute_instance_settings, include.base.locals.merged.environment_type, {})
 }
 
 inputs = merge(
-  read_terragrunt_config("path/to/_common/templates/compute_instance.hcl").inputs,
-  local.merged_vars,
+  include.base.locals.merged,
   local.selected_env_config,
   {
     # Basic instance configuration
-    hostname   = "${local.merged_vars.name_prefix}-${local.merged_vars.project}-vm-name"
+    hostname   = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project}-vm-name"
     project_id = dependency.project.outputs.project_id
-    zone       = "${local.merged_vars.region}-a"
+    zone       = "${include.base.locals.merged.region}-a"
     
     # Instance template dependency
     instance_template = dependency.instance_template.outputs.self_link
@@ -274,7 +270,7 @@ inputs = merge(
     
     # Option 2: Use shared project service account (legacy)
     # service_account = {
-    #   email  = local.merged_vars.project_service_account
+    #   email  = include.base.locals.merged.project_service_account
     #   scopes = local.selected_env_config.scopes
     # }
     
@@ -284,9 +280,9 @@ inputs = merge(
         instance = "vm-name"
         purpose  = "vm-purpose"
       },
-      local.merged_vars.org_labels,
-      local.merged_vars.env_labels,
-      local.merged_vars.project_labels
+      include.base.locals.merged.org_labels,
+      include.base.locals.merged.env_labels,
+      include.base.locals.merged.project_labels
     )
     
     # Number of instances to create

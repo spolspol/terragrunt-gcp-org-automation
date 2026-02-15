@@ -94,28 +94,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
-include "account" {
-  path = find_in_parent_folders("account.hcl")
-}
-
-include "env" {
-  path = find_in_parent_folders("env.hcl")
-}
-
-include "project" {
-  path = find_in_parent_folders("project.hcl")
-}
-
-include "region" {
-  path = find_in_parent_folders("region.hcl")
-}
-
-include "common" {
-  path = "${get_repo_root()}/_common/common.hcl"
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
 include "bucket_template" {
-  path = "${get_repo_root()}/_common/templates/cloud_storage.hcl"
+  path           = "${get_repo_root()}/_common/templates/cloud_storage.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "project" {
@@ -128,23 +114,9 @@ dependency "project" {
 }
 
 locals {
-  account_vars = read_terragrunt_config(find_in_parent_folders("account.hcl"))
-  env_vars     = read_terragrunt_config(find_in_parent_folders("env.hcl"))
-  project_vars = read_terragrunt_config(find_in_parent_folders("project.hcl"))
-  region_vars  = read_terragrunt_config(find_in_parent_folders("region.hcl"))
-  common_vars  = read_terragrunt_config("${get_repo_root()}/_common/common.hcl")
-
-  merged_vars = merge(
-    local.account_vars.locals,
-    local.env_vars.locals,
-    local.project_vars.locals,
-    local.region_vars.locals,
-    local.common_vars.locals
-  )
-
-  name_prefix = local.merged_vars.name_prefix != "" ? local.merged_vars.name_prefix : "tg"
-  bucket_name = "${local.name_prefix}-${local.merged_vars.project_name}-my-new-bucket"
-  region      = local.merged_vars.region
+  name_prefix = include.base.locals.merged.name_prefix != "" ? include.base.locals.merged.name_prefix : "tg"
+  bucket_name = "${local.name_prefix}-${include.base.locals.merged.project_name}-my-new-bucket"
+  region      = include.base.locals.region
 }
 
 inputs = merge(
@@ -158,7 +130,7 @@ inputs = merge(
     storage_class            = "STANDARD"
     public_access_prevention = "enforced"
     randomize_suffix         = true
-    environment_type         = local.merged_vars.environment_type
+    environment_type         = include.base.locals.merged.environment_type
 
     # Environment-specific settings in map format
     versioning = {
@@ -167,7 +139,7 @@ inputs = merge(
     }
     force_destroy = {
       for name in [local.bucket_name] :
-      lower(name) => local.merged_vars.environment_type == "production" ? false : true
+      lower(name) => include.base.locals.merged.environment_type == "production" ? false : true
     }
     bucket_policy_only = {
       for name in [local.bucket_name] :
@@ -181,15 +153,15 @@ inputs = merge(
     labels = merge(
       {
         component        = "storage"
-        environment      = local.merged_vars.environment
-        environment_type = local.merged_vars.environment_type
+        environment      = include.base.locals.merged.environment
+        environment_type = include.base.locals.merged.environment_type
         name_prefix      = local.name_prefix
         purpose          = "my-purpose"
         region           = local.region
       },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {}),
-      try(local.merged_vars.project_labels, {})
+      try(include.base.locals.merged.org_labels, {}),
+      try(include.base.locals.merged.env_labels, {}),
+      try(include.base.locals.merged.project_labels, {})
     )
   }
 )

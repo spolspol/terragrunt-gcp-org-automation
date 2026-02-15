@@ -59,8 +59,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "network_template" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/network.hcl"
+  path           = "${get_repo_root()}/_common/templates/network.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "project" {
@@ -72,36 +78,23 @@ dependency "project" {
   skip_outputs = true
 }
 
-locals {
-  merged_vars = merge(
-    try(read_terragrunt_config(find_in_parent_folders("account.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("env.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("project.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals, {})
-  )
-}
+inputs = {
+  project_id   = try(dependency.project.outputs.project_id, "mock-project-id")
+  network_name = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project}-vpc"
 
-inputs = merge(
-  try(read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/network.hcl").inputs, {}),
-  local.merged_vars,
-  {
-    project_id   = try(dependency.project.outputs.project_id, "mock-project-id")
-    network_name = "${local.merged_vars.name_prefix}-${local.merged_vars.project}-vpc"
-    
-    subnets = [
-      {
-        subnet_name           = "${local.merged_vars.name_prefix}-${local.merged_vars.project}-subnet-01"
-        subnet_ip             = "10.0.1.0/24"
-        subnet_region         = local.merged_vars.region
-        subnet_private_access = "true"
-        subnet_flow_logs      = "true"
-      }
-    ]
-    
-    # Environment-specific routing
-    routing_mode = local.merged_vars.environment_type == "production" ? "GLOBAL" : "REGIONAL"
-  }
-)
+  subnets = [
+    {
+      subnet_name           = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project}-subnet-01"
+      subnet_ip             = "10.0.1.0/24"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = "true"
+      subnet_flow_logs      = "true"
+    }
+  ]
+
+  # Environment-specific routing
+  routing_mode = include.base.locals.merged.environment_type == "production" ? "GLOBAL" : "REGIONAL"
+}
 ```
 
 ### Advanced Usage
@@ -116,14 +109,14 @@ inputs = merge(
       {
         subnet_name           = "main-subnet"
         subnet_ip             = "10.0.1.0/24"
-        subnet_region         = local.merged_vars.region
+        subnet_region         = include.base.locals.region
         subnet_private_access = "true"
         subnet_flow_logs      = "true"
       },
       {
-        subnet_name           = "secondary-subnet" 
+        subnet_name           = "secondary-subnet"
         subnet_ip             = "10.0.2.0/24"
-        subnet_region         = local.merged_vars.region
+        subnet_region         = include.base.locals.region
         subnet_private_access = "true"
         subnet_flow_logs      = "false"
       }

@@ -92,7 +92,7 @@ web-project/
 ### Machine Type
 Edit `terragrunt.hcl` to change the instance size:
 ```hcl
-machine_type = local.common_vars.locals.compute_defaults.machine_types[local.environment_type].medium
+machine_type = include.base.locals.merged.compute_defaults.machine_types[include.base.locals.environment].medium
 ```
 
 ### Startup Script
@@ -106,7 +106,7 @@ The `nginx-setup.sh` script can be customized to:
 Add custom rules in `firewall-rules/allow-web-traffic/terragrunt.hcl`:
 ```hcl
 {
-  name        = "${local.project_vars.locals.project_name}-allow-custom"
+  name        = "${include.base.locals.merged.project_name}-allow-custom"
   description = "Allow custom application port"
   direction   = "INGRESS"
   priority    = 1000

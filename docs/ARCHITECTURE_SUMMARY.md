@@ -53,25 +53,32 @@ GCP was selected based on:
 5. **Innovation**: Access to cutting-edge services and features
 
 ### Dynamic Configuration Patterns
-All configurations now use Terragrunt directory functions for path resolution:
+All configurations use `base.hcl` which automatically reads and merges the configuration hierarchy (account.hcl, env.hcl, project.hcl, region.hcl, common.hcl):
 
 ```hcl
-locals {
-  # Dynamic path construction replaces hardcoded paths
-  project_base_path = dirname(dirname(get_terragrunt_dir()))
-  secrets_base_path = "${local.project_base_path}/secrets"
-  networking_base_path = "${dirname(get_terragrunt_dir())}/networking"
-  
-  # Resource name extraction from directory structure
-  resource_name = basename(get_terragrunt_dir())
+include "root" {
+  path = find_in_parent_folders("root.hcl")
 }
 
-dependency "project" {
-  config_path = find_in_parent_folders("project")
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
+
+include "template_name" {
+  path           = "${get_repo_root()}/_common/templates/template_name.hcl"
+  merge_strategy = "deep"
+}
+
+# Access merged configuration via:
+# include.base.locals.merged.xxx       - any merged variable
+# include.base.locals.standard_labels  - standard resource labels
+# include.base.locals.region           - current region
+# include.base.locals.environment      - current environment
+# include.base.locals.module_versions  - centralized module versions
 ```
 
-This pattern eliminates hardcoded relative paths and enables portable, maintainable configurations.
+This pattern eliminates manual hierarchy reading and enables portable, maintainable configurations.
 
 ## Core Architectural Principles
 
@@ -202,11 +209,21 @@ Ensure infrastructure consistency through comprehensive resource management:
 
 ### Template-Based Resource Creation
 
-Resources are created using standardized templates:
+Resources are created using standardized templates, combined with the `base.hcl` configuration merger:
 
 ```hcl
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "compute_template" {
-  path = "${get_repo_root()}/_common/templates/compute_instance.hcl"
+  path           = "${get_repo_root()}/_common/templates/compute_instance.hcl"
+  merge_strategy = "deep"
 }
 ```
 
@@ -257,12 +274,18 @@ remote_state {
 
 ### Module Version Pinning
 
-All module versions are centrally managed:
+All module versions are centrally managed in `_common/common.hcl` and accessed via `base.hcl`:
 
 ```hcl
-locals {
-  compute_module_source = "tfr:///terraform-google-modules/vm/google//modules/compute_instance?version=12.0.0"
+# In _common/common.hcl (single source of truth for versions)
+module_versions = {
+  compute_instance = "12.0.0"
+  cloud_sql        = "23.1.0"
+  # ...
 }
+
+# In templates, accessed via base.hcl:
+# include.base.locals.module_versions.compute_instance
 ```
 
 **Benefits**:
@@ -476,14 +499,17 @@ Multi-level protection:
 The infrastructure includes a fully configured ArgoCD GitOps platform:
 
 ```hcl
-# Bootstrap configuration with dynamic paths
-locals {
-  project_base_path = dirname(dirname(dirname(dirname(get_terragrunt_dir()))))
-  secrets_base_path = "${local.project_base_path}/secrets"
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
 dependency "argocd_oauth_secret" {
-  config_path = "${local.secrets_base_path}/gke-argocd-oauth-client-secret"
+  config_path = "${dirname(dirname(get_terragrunt_dir()))}/secrets/gke-argocd-oauth-client-secret"
 }
 ```
 
@@ -531,8 +557,13 @@ The architecture supports several growth patterns:
 Easy to add new capabilities:
 
 ```hcl
-# Add to _common/common.hcl
-new_module_source = "tfr:///terraform-google-modules/new-module/google?version=1.0.0"
+# Add to _common/common.hcl under module_versions
+module_versions = {
+  # ...existing versions...
+  new_module = "1.0.0"
+}
+# Then create a template in _common/templates/new_module.hcl
+# Access version via include.base.locals.module_versions.new_module
 ```
 
 ### Multi-Region Support
