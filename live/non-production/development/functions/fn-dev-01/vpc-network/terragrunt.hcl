@@ -1,0 +1,59 @@
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
+include "network_template" {
+  path           = "${get_repo_root()}/_common/templates/network.hcl"
+  merge_strategy = "deep"
+}
+
+dependency "project" {
+  config_path = "../project"
+  mock_outputs = {
+    project_id   = "mock-project-id"
+    project_name = "mock-project-name"
+  }
+  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
+  skip_outputs                            = false
+}
+
+locals {
+  network_name = "${dependency.project.outputs.project_name}-vpc-network"
+}
+
+inputs = {
+  project_id       = try(dependency.project.outputs.project_id, "mock-project-id")
+  network_name     = local.network_name
+  environment_type = include.base.locals.environment_type
+
+  subnets = [
+    {
+      subnet_name           = "${local.network_name}-private"
+      subnet_ip             = "10.20.0.0/21"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = true
+      description           = "Private subnet for ${dependency.project.outputs.project_name}"
+    },
+    {
+      subnet_name           = "${local.network_name}-serverless"
+      subnet_ip             = "10.20.8.0/23"
+      subnet_region         = include.base.locals.region
+      subnet_private_access = true
+      subnet_flow_logs      = true
+      description           = "Serverless subnet for VPC connector / Direct VPC egress"
+    },
+  ]
+
+  network_labels = merge(
+    include.base.locals.standard_labels,
+    {
+      component = "network"
+    }
+  )
+}

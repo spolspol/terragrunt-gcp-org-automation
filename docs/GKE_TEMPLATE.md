@@ -86,10 +86,10 @@ The region abbreviation is generated using a generic algorithm that works across
 ### Examples
 | Region | Algorithm | Abbreviation | Example Cluster Name |
 |--------|-----------|--------------|---------------------|
-| `europe-west2` | `e` + `w` + `2` | `ew2` | `dev-01-ew2-cluster-01` |
-| `us-central1` | `u` + `c` + `1` | `uc1` | `dev-01-uc1-cluster-01` |
-| `asia-east1` | `a` + `e` + `1` | `ae1` | `dev-01-ae1-cluster-01` |
-| `us-west1` | `u` + `w` + `1` | `uw1` | `dev-01-uw1-cluster-01` |
+| `europe-west2` | `e` + `w` + `2` | `ew2` | `dp-dev-01-ew2-cluster-01` |
+| `us-central1` | `u` + `c` + `1` | `uc1` | `dp-dev-01-uc1-cluster-01` |
+| `asia-east1` | `a` + `e` + `1` | `ae1` | `dp-dev-01-ae1-cluster-01` |
+| `us-west1` | `u` + `w` + `1` | `uw1` | `dp-dev-01-uw1-cluster-01` |
 
 ### Implementation
 The naming logic is implemented in the cluster's `terragrunt.hcl`:
@@ -99,7 +99,7 @@ locals {
   # Cluster naming with new pattern: {project}-{region:0:3}-{cluster-id}
   cluster_id = basename(get_terragrunt_dir())  # cluster-01
   # Generic region abbreviation algorithm
-  region_parts = split("-", local.merged_vars.region)
+  region_parts = split("-", include.base.locals.merged.region)
   region_abbr = "${substr(local.region_parts[0], 0, 1)}${substr(local.region_parts[1], 0, 1)}${substr(local.region_parts[1], -1, 1)}"
 }
 
@@ -132,7 +132,7 @@ NAT Gateway integration is configured automatically when clusters are deployed w
 ```hcl
 # Node pools are automatically tagged for NAT gateway integration
 node_pools_tags = {
-  all = ["gke-node", "terragrunt-managed", "nat-enabled", local.merged_vars.environment]
+  all = ["gke-node", "terragrunt-managed", "nat-enabled", include.base.locals.merged.environment]
 }
 
 # Private node configuration
@@ -261,49 +261,21 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
-include "account" {
-  path = find_in_parent_folders("account.hcl")
-}
-
-include "env" {
-  path = find_in_parent_folders("env.hcl")
-}
-
-include "project" {
-  path = find_in_parent_folders("project.hcl")
-}
-
-include "region" {
-  path = find_in_parent_folders("region.hcl")
-}
-
-include "common" {
-  path = "${get_repo_root()}/_common/common.hcl"
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 
 include "gke_template" {
-  path = "${get_repo_root()}/_common/templates/gke.hcl"
+  path           = "${get_repo_root()}/_common/templates/gke.hcl"
+  merge_strategy = "deep"
 }
 
 locals {
-  account_vars = read_terragrunt_config(find_in_parent_folders("account.hcl"))
-  env_vars     = read_terragrunt_config(find_in_parent_folders("env.hcl"))
-  project_vars = read_terragrunt_config(find_in_parent_folders("project.hcl"))
-  region_vars  = read_terragrunt_config(find_in_parent_folders("region.hcl"))
-  common_vars  = read_terragrunt_config("${get_repo_root()}/_common/common.hcl")
-
-  merged_vars = merge(
-    local.account_vars.locals,
-    local.env_vars.locals,
-    local.project_vars.locals,
-    local.region_vars.locals,
-    local.common_vars.locals
-  )
-
   # Cluster naming with new pattern: {project}-{region:0:3}-{cluster-id}
   cluster_id = basename(get_terragrunt_dir())  # cluster-01
   # Generic region abbreviation algorithm
-  region_parts = split("-", local.merged_vars.region)
+  region_parts = split("-", include.base.locals.merged.region)
   region_abbr = "${substr(local.region_parts[0], 0, 1)}${substr(local.region_parts[1], 0, 1)}${substr(local.region_parts[1], -1, 1)}"
 }
 
@@ -335,8 +307,8 @@ inputs = merge(
     # Required parameters
     project_id       = dependency.project.outputs.project_id
     name            = "${dependency.project.outputs.project_name}-${local.region_abbr}-${local.cluster_id}"
-    region          = local.merged_vars.region
-    zones           = ["${local.merged_vars.region}-a", "${local.merged_vars.region}-b", "${local.merged_vars.region}-c"]
+    region          = include.base.locals.merged.region
+    zones           = ["${include.base.locals.merged.region}-a", "${include.base.locals.merged.region}-b", "${include.base.locals.merged.region}-c"]
     network         = dependency.vpc-network.outputs.network_name
     subnetwork      = dependency.vpc-network.outputs.subnets_names[0]
     
@@ -345,7 +317,7 @@ inputs = merge(
     ip_range_services = "gke-services"
     
     # Environment-specific configuration
-    environment_type = local.merged_vars.environment_type
+    environment_type = include.base.locals.merged.environment_type
     
     # Dev environment specific settings
     kubernetes_version = "latest"  # Use latest in dev
@@ -413,14 +385,14 @@ inputs = merge(
       {
         managed_by       = "terragrunt"
         component        = "gke"
-        environment      = local.merged_vars.environment
-        environment_type = local.merged_vars.environment_type
+        environment      = include.base.locals.merged.environment
+        environment_type = include.base.locals.merged.environment_type
         cluster_name     = local.cluster_id
         module_version   = "current"
       },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {}),
-      try(local.merged_vars.project_labels, {})
+      try(include.base.locals.merged.org_labels, {}),
+      try(include.base.locals.merged.env_labels, {}),
+      try(include.base.locals.merged.project_labels, {})
     )
     
     # Node pools labels
@@ -429,17 +401,17 @@ inputs = merge(
         {
           managed_by       = "terragrunt"
           component        = "gke"
-          environment      = local.merged_vars.environment
-          environment_type = local.merged_vars.environment_type
+          environment      = include.base.locals.merged.environment
+          environment_type = include.base.locals.merged.environment_type
         },
-        try(local.merged_vars.org_labels, {}),
-        try(local.merged_vars.env_labels, {})
+        try(include.base.locals.merged.org_labels, {}),
+        try(include.base.locals.merged.env_labels, {})
       )
     }
     
     # Node pools tags
     node_pools_tags = {
-      all = ["gke-node", "terragrunt-managed", local.merged_vars.environment]
+      all = ["gke-node", "terragrunt-managed", include.base.locals.merged.environment]
     }
   }
 )
@@ -526,7 +498,7 @@ The recommended pattern is to use a dedicated subnet for GKE clusters:
 {
   subnet_name           = "${dependency.project.outputs.project_name}-${local.parent_folder_name}-gke"
   subnet_ip             = "10.132.64.0/18"  # 16,384 IPs for nodes
-  subnet_region         = try(local.env_vars.locals.region, "europe-west2")
+  subnet_region         = try(include.base.locals.region, "europe-west2")
   subnet_private_access = true
   subnet_flow_logs      = true
   description           = "Dedicated subnet for GKE clusters"
@@ -589,19 +561,19 @@ Use the dedicated workflow for manual cluster management:
 # Plan changes
 gh workflow run manage-gke-cluster.yml \
   --field action=plan \
-  --field cluster=dev-01/cluster-01 \
+  --field cluster=dp-dev-01/cluster-01 \
   --field environment=development
 
 # Apply changes
 gh workflow run manage-gke-cluster.yml \
   --field action=apply \
-  --field cluster=dev-01/cluster-01 \
+  --field cluster=dp-dev-01/cluster-01 \
   --field environment=development
 
 # Destroy cluster
 gh workflow run manage-gke-cluster.yml \
   --field action=destroy \
-  --field cluster=dev-01/cluster-01 \
+  --field cluster=dp-dev-01/cluster-01 \
   --field environment=development
 ```
 

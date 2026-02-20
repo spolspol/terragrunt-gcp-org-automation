@@ -48,7 +48,7 @@ inputs = {
 
   # Set up folder admins who can create projects in this folder.
   all_folder_admins = [
-    "group:gcp-devops@example.com",                           # Replace with your actual admin group
+    "group:gcp-devops@example.com",                                     # Replace with your actual admin group
     "serviceAccount:tofu-sa-org@org-automation.iam.gserviceaccount.com" # Service account for automation
   ]
 

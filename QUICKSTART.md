@@ -18,7 +18,7 @@ Before running Terragrunt, update these values in the configuration files:
    org_id = "YOUR_ACTUAL_ORG_ID"  # Replace with your organization ID
    ```
 
-2. **Billing Account** in `live/non-production/development/dev-01/project.hcl`:
+2. **Billing Account** in `live/non-production/development/dp-dev-01/project.hcl`:
    ```hcl
    billing_account = "YOUR_BILLING_ACCOUNT_ID"  # Format: 012345-678901-234567
    ```
@@ -35,7 +35,7 @@ Before running Terragrunt, update these values in the configuration files:
 source setup_env.sh
 
 # This will set:
-# TF_VAR_project="dev-01"
+# TF_VAR_project="dp-dev-01"
 # TF_VAR_region="europe-west2"
 # TF_VAR_environment_type="non-production"
 ```
@@ -63,7 +63,7 @@ gsutil mb -p YOUR_STATE_PROJECT_ID -l europe-west2 gs://org-terragrunt-state
 ### 5. Initialize and Apply
 
 ```bash
-cd live/non-production/development/dev-01/project
+cd live/non-production/development/dp-dev-01/project
 terragrunt init
 terragrunt plan
 terragrunt apply

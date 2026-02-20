@@ -1,171 +1,227 @@
 # IP Allocation Tracking for terragrunt-gcp-org-automation
 # This file tracks all IP allocations across the infrastructure
-# Development Block: 10.128.0.0/10
 
 metadata:
-  schema_version: "1.1"
-  last_updated: "2025-08-20"
+  schema_version: "1.2"
+  last_updated: "2026-02-14"
   description: "Hierarchical IP allocation tracking for GCP infrastructure - Optimized"
 
 # Global allocations
 global:
   production:
-    block: "10.0.0.0/8" # Reserved for future production use
+    block: "10.0.0.0/8"
+    description: "Reserved for future production use"
   development:
-    block: "10.128.0.0/10"
-    description: "All development environments"
+    block: "10.10.0.0/12"
+    range: "10.10.0.0 - 10.31.255.255"
+    description: "Development environments"
+  hub:
+    block: "10.11.0.0/16"
+    description: "Hub networking (VPN gateway, shared services)"
   perimeter:
-    block: "10.192.0.0/10" # Reserved for future perimeter use
+    block: "10.192.0.0/10"
+    description: "Reserved for future perimeter use"
+
+# Hub environment (VPN gateway, shared networking)
+hub:
+  block: "10.11.0.0/16"
+  range: "10.11.0.0 - 10.11.255.255"
+  total_ips: 65536
+  environments:
+    vpn-gateway:
+      block: "10.11.0.0/16"
+      range: "10.11.0.0 - 10.11.255.255"
+      total_ips: 65536
+      status: "active"
+      primary_subnets:
+        vpn-gateway:
+          cidr: "10.11.1.0/24"
+          range: "10.11.1.0 - 10.11.1.255"
+          size: 256
+          description: "VPN gateway subnet"
+        vpn-server:
+          cidr: "10.11.2.0/24"
+          range: "10.11.2.0 - 10.11.2.255"
+          size: 256
+          description: "VPN server subnet"
+        vpn-client-default:
+          cidr: "10.11.100.0/24"
+          range: "10.11.100.0 - 10.11.100.255"
+          size: 256
+          description: "VPN default client pool"
+        vpn-client-admin:
+          cidr: "10.11.101.0/24"
+          range: "10.11.101.0 - 10.11.101.255"
+          size: 256
+          description: "VPN admin client pool"
+        vpn-monitoring:
+          cidr: "10.11.111.0/24"
+          range: "10.11.111.0 - 10.11.111.255"
+          size: 256
+          description: "VPN monitoring subnet"
+      hosts:
+        vpn-server-01:
+          ip: "10.11.2.10"
+          subnet: "vpn-server"
+          note: "OpenVPN Access Server"
 
 # Development environments
 development:
-  block: "10.128.0.0/10"
-  range: "10.128.0.0 - 10.191.255.255"
-  total_ips: 4194304
+  block: "10.10.0.0/12"
+  range: "10.10.0.0 - 10.31.255.255"
+  total_ips: 1441792
   environments:
     # Active environment
-    dev-01:
-      block: "10.132.0.0/16"
-      range: "10.132.0.0 - 10.132.255.255"
+    dp-dev-01:
+      block: "10.10.0.0/16"
+      range: "10.10.0.0 - 10.10.255.255"
       total_ips: 65536
       status: "active"
       primary_subnets:
         dmz:
-          cidr: "10.132.0.0/21"
-          range: "10.132.0.0 - 10.132.7.255"
+          cidr: "10.10.0.0/21"
+          range: "10.10.0.0 - 10.10.7.255"
           size: 2048
           description: "DMZ subnet for controlled external access"
         private:
-          cidr: "10.132.8.0/21"
-          range: "10.132.8.0 - 10.132.15.255"
+          cidr: "10.10.8.0/21"
+          range: "10.10.8.0 - 10.10.15.255"
           size: 2048
           description: "Private subnet for internal resources"
         public:
-          cidr: "10.132.16.0/21"
-          range: "10.132.16.0 - 10.132.23.255"
+          cidr: "10.10.16.0/21"
+          range: "10.10.16.0 - 10.10.23.255"
           size: 2048
           description: "Public subnet with NAT gateway internet access"
         gke:
-          cidr: "10.132.64.0/18"
-          range: "10.132.64.0 - 10.132.127.255"
-          size: 16384
-          description: "Dedicated subnet for GKE clusters"
-      secondary_ranges:
-        cluster-01-pods:
-          cidr: "10.132.128.0/21"
-          range: "10.132.128.0 - 10.132.135.255"
-          size: 2048
-          description: "Pod IP range for cluster-01"
-        cluster-01-services:
-          cidr: "10.132.192.0/24"
-          range: "10.132.192.0 - 10.132.192.255"
-          size: 256
-          description: "Service IP range for cluster-01"
-        cluster-02-pods:
-          cidr: "10.132.136.0/21"
-          range: "10.132.136.0 - 10.132.143.255"
-          size: 2048
-          description: "Pod IP range for cluster-02 (reserved)"
-        cluster-02-services:
-          cidr: "10.132.193.0/24"
-          range: "10.132.193.0 - 10.132.193.255"
-          size: 256
-          description: "Service IP range for cluster-02 (reserved)"
-        cluster-03-pods:
-          cidr: "10.132.144.0/21"
-          range: "10.132.144.0 - 10.132.151.255"
-          size: 2048
-          description: "Pod IP range for cluster-03 (reserved)"
-        cluster-03-services:
-          cidr: "10.132.194.0/24"
-          range: "10.132.194.0 - 10.132.194.255"
-          size: 256
-          description: "Service IP range for cluster-03 (reserved)"
-        cluster-04-pods:
-          cidr: "10.132.152.0/21"
-          range: "10.132.152.0 - 10.132.159.255"
-          size: 2048
-          description: "Pod IP range for cluster-04 (reserved)"
-        cluster-04-services:
-          cidr: "10.132.195.0/24"
-          range: "10.132.195.0 - 10.132.195.255"
-          size: 256
-          description: "Service IP range for cluster-04 (reserved)"
-      reserved:
-        future-use-1:
-          cidr: "10.132.24.0/21"
-          range: "10.132.24.0 - 10.132.31.255"
-          size: 2048
-          description: "Reserved for future subnet expansion"
-        future-use-2:
-          cidr: "10.132.32.0/19"
-          range: "10.132.32.0 - 10.132.63.255"
-          size: 8192
-          description: "Reserved for future services"
-        future-use-3:
-          cidr: "10.132.160.0/19"
-          range: "10.132.160.0 - 10.132.191.255"
-          size: 8192
-          description: "Reserved for future GKE expansion"
-        future-use-4:
-          cidr: "10.132.196.0/22"
-          range: "10.132.196.0 - 10.132.199.255"
-          size: 1024
-          description: "Reserved for additional services"
-        future-use-5:
-          cidr: "10.132.200.0/21"
-          range: "10.132.200.0 - 10.132.207.255"
-          size: 2048
-          description: "Reserved for future expansion"
-        future-use-6:
-          cidr: "10.132.208.0/20"
-          range: "10.132.208.0 - 10.132.223.255"
+          cidr: "10.10.64.0/20"
+          range: "10.10.64.0 - 10.10.79.255"
           size: 4096
-          description: "Reserved for future expansion"
-        future-use-7:
-          cidr: "10.132.224.0/19"
-          range: "10.132.224.0 - 10.132.255.255"
-          size: 8192
-          description: "Reserved for future expansion"
-      utilization:
-        allocated_ips: 33792
-        available_ips: 31744
-        utilization_percentage: 51.6
+          description: "Dedicated subnet for GKE clusters with NAT gateway internet access"
+        cloudrun:
+          cidr: "10.10.96.0/23"
+          range: "10.10.96.0 - 10.10.97.255"
+          size: 512
+          description: "Dedicated subnet for Cloud Run serverless VPC access"
+      gke_secondary_ranges:
+        pods:
+          cluster-01:
+            cidr: "10.10.128.0/17"
+            range: "10.10.128.0 - 10.10.255.255"
+            size: 32768
+            status: "allocated"
+          cluster-02:
+            cidr: "10.10.128.0/18"
+            range: "10.10.128.0 - 10.10.191.255"
+            size: 16384
+            status: "reserved"
+        services:
+          cluster-01:
+            cidr: "10.10.112.0/20"
+            range: "10.10.112.0 - 10.10.127.255"
+            size: 4096
+            status: "allocated"
+          cluster-02:
+            cidr: "10.10.82.0/23"
+            range: "10.10.82.0 - 10.10.83.255"
+            size: 512
+            status: "reserved"
+      hosts:
+        cluster-01-ingress:
+          ip: "10.10.8.10"
+          subnet: "private"
+          note: "GKE cluster-01 internal ingress IP"
 
-    # Reserved for future environments
-    dev-02:
-      block: "10.133.0.0/16"
-      range: "10.133.0.0 - 10.133.255.255"
+    # Functions environment
+    fn-dev-01:
+      block: "10.20.0.0/16"
+      range: "10.20.0.0 - 10.20.255.255"
       total_ips: 65536
-      status: "reserved"
+      status: "active"
+      primary_subnets:
+        private:
+          cidr: "10.20.0.0/21"
+          range: "10.20.0.0 - 10.20.7.255"
+          size: 2048
+          description: "Private subnet for internal resources"
+        serverless:
+          cidr: "10.20.8.0/23"
+          range: "10.20.8.0 - 10.20.9.255"
+          size: 512
+          description: "Serverless VPC connector subnet"
+
+    # Data platform environment
+    dp-dev-01:
+      block: "10.30.0.0/16"
+      range: "10.30.0.0 - 10.30.255.255"
+      total_ips: 65536
+      status: "active"
       primary_subnets:
         dmz:
-          cidr: "10.133.0.0/21"
+          cidr: "10.30.0.0/21"
+          range: "10.30.0.0 - 10.30.7.255"
+          size: 2048
+          description: "DMZ subnet for controlled external access"
         private:
-          cidr: "10.133.8.0/21"
+          cidr: "10.30.8.0/21"
+          range: "10.30.8.0 - 10.30.15.255"
+          size: 2048
+          description: "Private subnet for internal resources"
         public:
-          cidr: "10.133.16.0/21"
+          cidr: "10.30.16.0/21"
+          range: "10.30.16.0 - 10.30.23.255"
+          size: 2048
+          description: "Public subnet for internet-facing resources"
         gke:
-          cidr: "10.133.64.0/18"
+          cidr: "10.30.64.0/20"
+          range: "10.30.64.0 - 10.30.79.255"
+          size: 4096
+          description: "Dedicated subnet for GKE clusters"
+        cloudrun:
+          cidr: "10.30.96.0/23"
+          range: "10.30.96.0 - 10.30.97.255"
+          size: 512
+          description: "Dedicated subnet for CloudRun Direct VPC egress"
+      gke_secondary_ranges:
+        pods:
+          cluster-01:
+            cidr: "10.30.128.0/17"
+            range: "10.30.128.0 - 10.30.255.255"
+            size: 32768
+            status: "allocated"
+          cluster-02:
+            cidr: "10.30.128.0/18"
+            range: "10.30.128.0 - 10.30.191.255"
+            size: 16384
+            status: "reserved"
+        services:
+          cluster-01:
+            cidr: "10.30.112.0/20"
+            range: "10.30.112.0 - 10.30.127.255"
+            size: 4096
+            status: "allocated"
+          cluster-02:
+            cidr: "10.30.82.0/23"
+            range: "10.30.82.0 - 10.30.83.255"
+            size: 512
+            status: "reserved"
+
+    # Reserved environments
+    dev-02:
+      block: "10.12.0.0/16"
+      range: "10.12.0.0 - 10.12.255.255"
+      total_ips: 65536
+      status: "reserved"
 
     dev-03:
-      block: "10.134.0.0/16"
-      range: "10.134.0.0 - 10.134.255.255"
+      block: "10.13.0.0/16"
+      range: "10.13.0.0 - 10.13.255.255"
       total_ips: 65536
       status: "reserved"
-      primary_subnets:
-        dmz:
-          cidr: "10.134.0.0/21"
-        private:
-          cidr: "10.134.8.0/21"
-        public:
-          cidr: "10.134.16.0/21"
-        gke:
-          cidr: "10.134.64.0/18"
 
     dev-04:
-      block: "10.135.0.0/16"
-      range: "10.135.0.0 - 10.135.255.255"
+      block: "10.14.0.0/16"
+      range: "10.14.0.0 - 10.14.255.255"
       total_ips: 65536
       status: "reserved"
 
@@ -175,12 +231,6 @@ perimeter:
   range: "10.192.0.0 - 10.255.255.255"
   total_ips: 4194304
   environments:
-    data-staging:
-      block: "10.196.0.0/16"
-      range: "10.196.0.0 - 10.196.255.255"
-      total_ips: 65536
-      status: "reserved"
-      description: "Data staging environment"
     dns-infra:
       block: "10.197.0.0/16"
       range: "10.197.0.0 - 10.197.255.255"
@@ -205,51 +255,78 @@ production:
       total_ips: 65536
       status: "reserved"
 
-# External IP allocations (examples)
-external_ips:
-  nat_gateways:
-    - name: "dev-01-nat-gateway"
-      ip: "35.246.0.1"
-      region: "europe-west2"
-      purpose: "NAT Gateway for dev-01"
-  cluster_services:
-    - name: "dev-01-cluster-01-services"
-      ip: "35.246.0.123"
-      region: "europe-west2"
-      purpose: "Ingress for cluster-01"
-  sql_servers:
-    - name: "dev-01-sql-server-01"
-      ip: "35.246.0.200"
-      region: "europe-west2"
-      purpose: "SQL Server external access"
+# Private Service Access allocations
+psa:
+  block: "10.199.0.0/16"
+  range: "10.199.0.0 - 10.199.255.255"
+  total_ips: 65536
+  description: "Private Service Access for Cloud SQL and managed services"
+  allocations:
+    perimeter:
+      block: "10.199.0.0/20"
+      range: "10.199.0.0 - 10.199.15.255"
+      status: "reserved"
+    development:
+      block: "10.199.16.0/20"
+      range: "10.199.16.0 - 10.199.31.255"
+      status: "active"
+      projects:
+        dp-dev-01:
+          cidr: "10.199.16.0/24"
+          status: "active"
+        fn-dev-01:
+          cidr: "10.20.200.0/24"
+          status: "active"
+        dp-dev-01:
+          cidr: "10.30.200.0/24"
+          status: "active"
+    staging:
+      block: "10.199.32.0/20"
+      range: "10.199.32.0 - 10.199.47.255"
+      status: "reserved"
+    production:
+      block: "10.199.64.0/19"
+      range: "10.199.64.0 - 10.199.95.255"
+      status: "reserved"
+    sandboxes:
+      block: "10.199.96.0/20"
+      range: "10.199.96.0 - 10.199.111.255"
+      status: "reserved"
+    reserved:
+      block: "10.199.112.0/17"
+      range: "10.199.112.0 - 10.199.255.255"
+      status: "reserved"
 
-# Summary statistics
+# Special allocations (non-routable)
+special:
+  gke_master_cidrs:
+    description: "GKE control plane CIDRs (RFC1918 private)"
+    cluster-01: "172.16.0.32/28"
+    cluster-02: "172.16.0.48/28"
+    cluster-03: "reserved"
+    cluster-04: "reserved"
+
+  nat_gateway:
+    description: "NAT Gateway external IP allocations"
+    dp-dev-01: "TBD - allocated dynamically by GCP"
+    purpose: "Provides internet access for GKE and public subnet resources"
+    coverage: "dp-dev-01: 10.10.64.0/20 (GKE) + 10.10.16.0/21 (public); dp-dev-01: 10.30.64.0/20 (GKE) + 10.30.16.0/21 (public)"
+
+# Allocation rules
+rules:
+  - "Each environment gets a /16 block"
+  - "Primary subnets are /21 blocks (2,048 IPs each)"
+  - "GKE primary subnet is /20 (4,096 IPs)"
+  - "Active GKE pod ranges use /17 or /18 blocks"
+  - "GKE service ranges use dedicated /20 or /23 blocks based on ingress capacity needs"
+  - "PSA allocations use 10.199.0.0/16 block"
+  - "Hub networking uses 10.11.0.0/16"
+
+# Usage summary
 summary:
-  total_development_ips: 4194304
-  total_perimeter_ips: 4194304
-  total_production_ips: 16777216
-  total_managed_ips: 24666624
-  active_environments: 1
-  reserved_environments: 8
-  ip_efficiency_percentage: 51.6
-
-# IP allocation rules and guidelines
-guidelines:
-  subnet_alignment:
-    - "/21 blocks must start at addresses divisible by 8"
-    - "/18 blocks must start at addresses divisible by 64"
-    - "/19 blocks must start at addresses divisible by 32"
-    - "/24 blocks are naturally aligned"
-  naming_conventions:
-    - "Primary subnets: {project}-{environment}-{type}"
-    - "Secondary ranges: {cluster-id}-{pods|services}"
-    - "External IPs: {project}-{resource}-{purpose}"
-  allocation_strategy:
-    - "Each environment gets a /16 block (65,536 IPs)"
-    - "GKE clusters get /18 primary (16,384 IPs)"
-    - "Pod ranges get /21 (2,048 IPs)"
-    - "Service ranges get /24 (256 IPs)"
-  growth_planning:
-    - "Support for up to 64 development environments"
-    - "Each environment can host 4-8 GKE clusters"
-    - "48.4% of dev-01 space available for growth"
+  development_allocated: 3 # dp-dev-01, fn-dev-01, dp-dev-01
+  development_reserved: 3 # dev-02, dev-03, dev-04
+  hub_allocated: 1 # vpn-gateway
+  perimeter_reserved: 1 # dns-infra
+  production_reserved: 2 # prod-01, prod-02
+  total_environments_possible: 64 # per environment type

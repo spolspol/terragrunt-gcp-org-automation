@@ -1,103 +1,166 @@
-# Terragrunt GCP Infrastructure Live
+# Terragrunt GCP Organisation Automation
 
-This repository manages Google Cloud Platform (GCP) infrastructure using Terragrunt and OpenTofu, following best practices from Gruntwork's reference architecture.
+This repository manages Google Cloud Platform (GCP) infrastructure using Terragrunt and OpenTofu, following a hub-and-spoke architecture with hierarchical, template-based configuration.
 
 ## Workflow Status
 
-[![Terragrunt PR Engine](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/terragrunt-pr-engine.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/terragrunt-pr-engine.yml)
-[![Terragrunt Apply Engine](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/terragrunt-apply-engine.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/terragrunt-apply-engine.yml)
-[![Manage Compute Instance](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/manage-compute-instance.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/manage-compute-instance.yml)
-[![Manage SQL Instance](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/manage-sql-instance.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/manage-sql-instance.yml)
-[![Upload VM Scripts](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/upload-vm-scripts.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-automation/actions/workflows/upload-vm-scripts.yml)
+[![Terragrunt Main Engine](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/terragrunt-main-engine.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/terragrunt-main-engine.yml)
+[![Manage Compute Instance](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/manage-compute-instance.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/manage-compute-instance.yml)
+[![Manage SQL Instance](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/manage-sql-instance.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/manage-sql-instance.yml)
+[![Manage GKE Cluster](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/manage-gke-cluster.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/manage-gke-cluster.yml)
+[![Upload VM Scripts](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/upload-vm-scripts.yml/badge.svg)](https://github.com/example-org/terragrunt-gcp-org-automation/actions/workflows/upload-vm-scripts.yml)
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Architecture](#architecture)
 - [Repository Structure](#repository-structure)
 - [Quick Start](#quick-start)
 - [Essential Commands](#essential-commands)
+- [Template System](#template-system)
 - [Documentation](#documentation)
-- [Key Features](#key-features)
 - [CI/CD Workflows](#cicd-workflows)
 - [Development Best Practices](#development-best-practices)
-- [Recent Updates](#recent-updates)
 - [References](#references)
 
 ## Overview
 
 This infrastructure-as-code repository implements a hierarchical configuration approach for managing GCP resources across multiple environments. It uses:
 
-- **OpenTofu v1.9.1** (Terraform alternative) as the infrastructure provisioning engine
-- **Terragrunt v0.80.2** for configuration management and DRY infrastructure code
-- **Reusable templates** for standardized resource configuration
-- **Hierarchical structure** for environment/account/project organization
-- **Folder-based organization** for GCP resource hierarchy
-- **GitHub Actions** for automated CI/CD workflows
+- **OpenTofu 1.11.x** (Terraform alternative) as the infrastructure provisioning engine
+- **Terragrunt 0.99.x** for configuration management and DRY infrastructure code
+- **31 reusable templates** for standardised resource configuration
+- **Hub-and-spoke architecture** with centralised DNS, networking, PKI, and VPN
+- **Two sub-environment patterns** demonstrating serverless and data platform architectures
+- **GitHub Actions** for automated CI/CD workflows with dependency-aware execution
 
 > **Note**: This repository uses `root.hcl` instead of `terragrunt.hcl` as the root configuration file.
+
+## Architecture
+
+### Hub-and-Spoke Model
+
+```mermaid
+graph TD
+    %% ── External ──────────────────────────────────────────────
+    CLIENTS("<b>Clients</b>")
+    USERS("<b>Users</b>")
+
+    %% ── GCP Organisation ──────────────────────────────────────
+    subgraph GCPOrg["<b>🏢 GCP Organisation</b>"]
+
+        subgraph Hub["<b>📁 Hub — Shared Infrastructure</b>"]
+            DNS("<b>DNS Hub<br/>Centralised DNS</b>")
+            NET("<b>Network Hub<br/>Connectivity</b>")
+            PKI("<b>PKI Hub<br/>Certificate Authority</b>")
+            VPN("<b>VPN Gateway<br/>Secure Access</b>")
+        end
+
+        subgraph Dev["<b>📁 Development Environment</b>"]
+            FN("<b>fn-dev-01 — Serverless<br/>Cloud Run · Public LB · Cloud Armor</b>")
+            DP("<b>dp-dev-01 — Platform (Fully Private)<br/>GKE · ArgoCD · BigQuery</b>")
+        end
+    end
+
+    %% ── Traffic flows ─────────────────────────────────────────
+    CLIENTS ==>|"<b>HTTPS</b>"| FN
+    USERS ==>|"<b>VPN</b>"| VPN
+    Hub ==> Dev
+    DNS -.->|"<b>DNS Peering</b>"| Dev
+    VPN ==>|"<b>VPC Peering</b>"| DP
+    PKI -.->|"<b>TLS Certs</b>"| Dev
+
+    %% ── Node styles ───────────────────────────────────────────
+    classDef external fill:#bbdefb,stroke:#1565c0,stroke-width:3px,font-weight:bold,color:#000
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,font-weight:bold,color:#000
+    classDef serverless fill:#ffccbc,stroke:#d84315,stroke-width:3px,font-weight:bold,color:#000
+    classDef compute fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,font-weight:bold,color:#000
+
+    class CLIENTS,USERS external
+    class DNS,NET,PKI,VPN hub
+    class FN serverless
+    class DP compute
+
+    %% ── Link styles (by index) ────────────────────────────────
+    %% 0: Clients → fn-dev-01 (blue — internet)
+    linkStyle 0 stroke:#1565c0,stroke-width:3px
+    %% 1: Clients → VPN (red — public edge)
+    linkStyle 1 stroke:#c62828,stroke-width:3px
+    %% 2: Hub → Dev (green — internal)
+    linkStyle 2 stroke:#2e7d32,stroke-width:3px
+    %% 3: DNS peering (green)
+    linkStyle 3 stroke:#2e7d32,stroke-width:2px
+    %% 4: VPN → dp-dev-01 (green — VPC peering)
+    linkStyle 4 stroke:#2e7d32,stroke-width:3px
+    %% 5: PKI certs (green)
+    linkStyle 5 stroke:#2e7d32,stroke-width:2px
+
+    %% ── Subgraph styles ───────────────────────────────────────
+    style GCPOrg fill:#fafafa,stroke:#424242,stroke-width:3px,color:#000
+    style Hub fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#000
+    style Dev fill:#fff8e1,stroke:#f9a825,stroke-width:3px,color:#000
+```
+
+- **DNS Hub** — Centralised DNS resolution with forwarding and peering
+- **Network Hub** — Shared network connectivity
+- **PKI Hub** — Certificate Authority Service for private TLS certificates
+- **VPN Gateway** — Secure VPN-only access to dp-dev-01 via VPC peering
+- **Development** — Two sub-environment patterns:
+  - **functions (fn-dev-01)** — Serverless Cloud Run behind public Load Balancer with Cloud Armor; clients connect directly via HTTPS (no VPN)
+  - **platform (dp-dev-01)** — Fully private data platform with GKE, ArgoCD, and BigQuery; access via VPN only
+
+### Configuration Hierarchy
+
+```
+root.hcl → account.hcl → env.hcl → project.hcl → region.hcl
+```
+
+Each level adds progressively more specific configuration, merged via `_common/base.hcl`.
+
+### IP Allocation
+
+| Project | VPC CIDR | PSA Range | GKE Master |
+|---------|----------|-----------|------------|
+| vpn-gateway | 10.11.0.0/16 | — | — |
+| fn-dev-01 | 10.20.0.0/16 | 10.20.200.0/24 | — |
+| dp-dev-01 | 10.30.0.0/16 | 10.30.200.0/24 | 172.16.0.48/28 |
 
 ## Repository Structure
 
 ```
-tg-gcp-infra-live/
-├── _common/                    # Common configurations and templates
-│   ├── common.hcl              # Shared variables and module versions
-│   └── templates/              # Reusable resource templates
-├── docs/                       # Detailed documentation
-│   ├── BOOTSTRAP.md            # Complete bootstrap setup guide
-│   └── ...                     # Other documentation files
-├── .github/workflows/          # CI/CD automation workflows
-├── scripts/                    # Helper scripts for automation
-│   ├── parse_resource_order.py # Parses and visualizes resource dependencies
-│   ├── setup-pre-commit.sh     # Sets up pre-commit hooks
-│   └── save-plan-artifact.sh   # Saves Terragrunt plan artifacts
-├── live/                       # Live infrastructure by environment
-│   └── account/                # Account level
-│       ├── account.hcl         # Account-level variables
-│       └── environment/        # Environment level (dev, staging, prod)
-│           ├── env.hcl         # Environment-wide settings
-│           ├── folder/         # GCP folder creation
-│           │   └── terragrunt.hcl
-│           └── project-name/   # Project level
-│               ├── project.hcl # Project-specific variables
-│               ├── project/    # Project creation
-│               │   └── terragrunt.hcl
-│               ├── vpc-network/ # VPC network resources
-│               │   ├── terragrunt.hcl
-│               │   └── private-service-access/
-│               │       └── terragrunt.hcl
-│               ├── secrets/    # Secret management
-│               │   ├── secrets.hcl
-│               │   └── secret-name/
-│               │       └── terragrunt.hcl
-│               ├── firewall-rules/ # Firewall rules configuration
-│               │   └── terragrunt.hcl
-│               ├── external-ip/  # External IP reservations
-│               │   └── terragrunt.hcl
-│               ├── iam-bindings/ # IAM role bindings
-│               │   └── terragrunt.hcl
-│               └── region/     # Region level
-│                   ├── region.hcl
-│                   ├── bigquery/
-│                   │   └── terragrunt.hcl
-│                   ├── compute/
-│                   │   ├── compute.hcl
-│                   │   └── vm-name/
-│                   │       ├── instance-template/
-│                   │       │   └── terragrunt.hcl
-│                   │       ├── iam-bindings/
-│                   │       │   └── terragrunt.hcl
-│                   │       ├── scripts/
-│                   │       │   └── *.sh    # VM-specific scripts
-│                   │       └── terragrunt.hcl
-│                   ├── cloud-sql/
-│                   │   └── sql-server-01/
-│                   │       └── terragrunt.hcl
-│                   └── buckets/
-│                       ├── vm-scripts/
-│                       │   └── terragrunt.hcl
-├── root.hcl                    # Root configuration
-└── QUICKSTART.md               # Quick start guide
+terragrunt-gcp-org-automation/
+├── _common/                           # Common configurations
+│   ├── base.hcl                       # Centralised hierarchy reader
+│   ├── common.hcl                     # Shared variables and module versions
+│   ├── providers.hcl                  # Provider configuration
+│   └── templates/                     # 31 reusable resource templates
+├── docs/                              # Detailed documentation (41 guides)
+├── scripts/                           # Helper scripts
+├── .github/
+│   ├── workflows.disabled/            # CI/CD workflows (enable by moving to workflows/)
+│   ├── actions/                       # Composite GitHub Actions
+│   ├── scripts/                       # Workflow support scripts
+│   ├── workflow-config/               # Resource type definitions
+│   └── CODEOWNERS                     # Review requirements
+├── live/
+│   └── non-production/                # Account level
+│       ├── account.hcl                # Account-wide variables
+│       ├── org-iam-bindings/          # Organisation-level IAM
+│       ├── hub/                       # Shared infrastructure
+│       │   ├── dns-hub/               # Centralised DNS
+│       │   ├── network-hub/           # Network connectivity
+│       │   ├── pki-hub/               # Certificate Authority Service
+│       │   └── vpn-gateway/           # VPN access
+│       └── development/               # Development environment
+│           ├── env.hcl
+│           ├── folder/
+│           ├── folder-iam-bindings/
+│           ├── functions/             # Serverless pattern
+│           │   └── fn-dev-01/         # Cloud Run + Public LB + Cloud Armor
+│           └── platform/              # Data platform pattern
+│               └── dp-dev-01/         # GKE + ArgoCD + BigQuery
+├── root.hcl                           # Root configuration
+└── QUICKSTART.md                      # Quick start guide
 ```
 
 ## Quick Start
@@ -105,285 +168,248 @@ tg-gcp-infra-live/
 1. **Bootstrap Infrastructure (Recommended)**
    ```bash
    # Clone the repository
-   git clone https://github.com/your-org/tg-gcp-infra-live.git
-   cd tg-gcp-infra-live
-   
+   git clone https://github.com/example-org/terragrunt-gcp-org-automation.git
+   cd terragrunt-gcp-org-automation
+
    # Run the bootstrap script to set up foundational infrastructure
    ./scripts/org-bootstrap.sh
-   
+
    # This creates:
-   # - GCP Folder: org-bootstrap 
+   # - GCP Folder: org-bootstrap
    # - GCP Project: org-automation
-   # - Service Account: tofu-sa-org with organization-level permissions
+   # - Service Account: tofu-sa-org with organisation-level permissions
    # - State Bucket: org-tofu-state
    # - Billing Bucket: org-billing-usage-reports
-   # - Helper scripts for project permissions
-   
-   # Set up authentication using the bootstrap service account
+
+   # Set up authentication
    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/tofu-sa-org-key.json"
    source scripts/setup_env.sh
-   
-   # For secrets management:
-   source scripts/setup_secrets_env.sh
    ```
 
 2. **Manual Setup (Alternative)**
-   - **Prerequisites**
-     - OpenTofu ≥ 1.9.1
-     - Terragrunt ≥ 0.80.2
-     - Google Cloud SDK
-     - GCP Service Account with appropriate permissions
+
+   Prerequisites: OpenTofu >= 1.11.0, Terragrunt >= 0.99.0, Google Cloud SDK
 
    ```bash
-   # Set up environment variables
    source scripts/setup_env.sh
-   
-   # Set up GCP authentication
    export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
-   
-   # Deploy infrastructure in dependency order:
-   
-   # 1. Create the folder first
-   cd live/account/environment/folder
-   terragrunt init && terragrunt apply
-   
-   # 2. Create the project (depends on folder)
-   cd ../project-name/project
-   terragrunt init && terragrunt apply
-   
-   # 3. Create VPC network (depends on project)
-   cd ../vpc-network
-   terragrunt init && terragrunt apply
-   
-   # 4. Create private service access (depends on VPC network)
-   cd private-service-access
-   terragrunt init && terragrunt apply
-   
-   # 5. Deploy regional resources (depends on project and network)
-   cd ../region/bigquery
+
+   # Deploy in dependency order:
+   # 1. Folder → 2. Project → 3. VPC Network → 4. PSA → 5. Resources
+   cd live/non-production/development/folder
    terragrunt init && terragrunt apply
    ```
 
-For detailed setup instructions, see [Bootstrap Guide](docs/BOOTSTRAP.md), [QUICKSTART.md](QUICKSTART.md), [OpenTofu Setup Guide](docs/OPENTOFU_SETUP.md) and [GCP Authentication Guide](docs/GCP_AUTHENTICATION.md).
+For detailed instructions, see [Bootstrap Guide](docs/BOOTSTRAP.md), [QUICKSTART.md](QUICKSTART.md), and [GCP Authentication](docs/GCP_AUTHENTICATION.md).
 
 ## Essential Commands
 
-### Terragrunt Commands (Never use terraform/tofu directly)
 ```bash
 # Navigate to resource directory first
-cd live/account/environment/project-name/resource
+cd live/non-production/development/platform/dp-dev-01/resource
 
 # Standard workflow
 terragrunt init
 terragrunt plan
 terragrunt apply
-terragrunt destroy
-terragrunt validate
 
 # Common flags
 terragrunt plan --terragrunt-non-interactive
 terragrunt apply --auto-approve
-```
 
-### VM Scripts Management
-```bash
-# Manually upload VM scripts to GCS buckets
-gh workflow run upload-vm-scripts.yml
-
-# Force upload all scripts (even if no changes)
-gh workflow run upload-vm-scripts.yml --field force_upload=true
-```
-
-### Pre-commit Setup
-```bash
+# Pre-commit hooks
 ./scripts/setup-pre-commit.sh
-# Runs terragrunt fmt, secret detection, YAML formatting
-```
+pre-commit run --all-files
 
-### Resource Dependency Analysis
-```bash
-# Visualize resource dependencies and deployment order
+# Resource dependency analysis
 python scripts/parse_resource_order.py
+
+# Manual workflow execution
+gh workflow run manage-compute-instance.yml --field action=deploy --field instance=project/instance
+gh workflow run manage-sql-instance.yml --field action=deploy --field instance=project/instance
+gh workflow run manage-gke-cluster.yml --field action=deploy --field cluster=project/cluster
 ```
 
-### Manual Workflow Execution
-```bash
-# Deploy/destroy specific compute instance
-gh workflow run manage-compute-instance.yml \
-  --field action=deploy \
-  --field instance=project/instance
-# Example: --field instance=org-dev-01/web-server-01
+## Template System
 
-# Manage SQL Server instance
-gh workflow run manage-sql-instance.yml \
-  --field action=deploy \
-  --field instance=project/instance
+### Base Configuration
+
+The `_common/base.hcl` file centralises hierarchy reading. Include it with `expose = true` to access merged configuration from all levels:
+
+```hcl
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+# Access via: include.base.locals.merged, include.base.locals.standard_labels
+```
+
+### Available Templates (31)
+
+All templates live in `_common/templates/` and module versions are centralised in `_common/common.hcl`.
+
+| Category | Templates |
+|----------|-----------|
+| **Infrastructure** | `folder.hcl`, `project.hcl`, `network.hcl`, `private_service_access.hcl` |
+| **Compute** | `compute_instance.hcl`, `instance_template.hcl`, `gke.hcl` |
+| **Networking** | `cloud-router.hcl`, `cloud-nat.hcl`, `external_ip.hcl`, `internal_ip.hcl`, `firewall_rules.hcl`, `vpc_peering.hcl`, `ncc.hcl` |
+| **Serverless** | `cloud-run.hcl`, `cloud_armor.hcl` |
+| **Storage** | `cloud_storage.hcl`, `bigquery.hcl`, `artifact_registry.hcl` |
+| **Database** | `cloud_sql.hcl`, `cloud_sql_postgres.hcl` |
+| **DNS** | `cloud_dns.hcl`, `cloud_dns_peering.hcl` |
+| **Security** | `secret_manager.hcl`, `iam_bindings.hcl` |
+| **IAM** | `org_iam_bindings.hcl`, `folder_iam_bindings.hcl`, `service_account.hcl`, `workload_identity.hcl` |
+| **PKI** | `certificate_authority_service.hcl`, `certificate_manager.hcl` |
+
+### Template Usage Pattern
+
+```hcl
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
+include "template_name" {
+  path           = "${get_repo_root()}/_common/templates/template_name.hcl"
+  merge_strategy = "deep"
+}
+
+dependency "project" {
+  config_path = "../project"
+  mock_outputs = {
+    project_id = "mock-project-id"
+  }
+  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
+}
+
+inputs = {
+  project_id = dependency.project.outputs.project_id
+  # resource-specific inputs...
+}
 ```
 
 ## Documentation
 
+### Getting Started
+
 | Document | Description |
 |----------|-------------|
-| [Bootstrap Guide](docs/BOOTSTRAP.md) | **Complete GCP bootstrap setup** - Creates foundational infrastructure automatically |
-| [OpenTofu Setup](docs/OPENTOFU_SETUP.md) | Setting up and using OpenTofu with this repository |
-| [GCP Authentication](docs/GCP_AUTHENTICATION.md) | Setting up authentication with GCP service accounts |
-| [Root Configuration](docs/ROOT_CONFIGURATION.md) | Details about the root.hcl configuration |
-| [GitHub Workflows](docs/WORKFLOWS.md) | Comprehensive guide to CI/CD workflows and automation |
-| [Configuration Templates](docs/CONFIGURATION_TEMPLATES.md) | Using and creating reusable templates |
-| [Folder Template](docs/FOLDER_TEMPLATE.md) | Guide for the GCP Folder template |
-| [Project Template](docs/PROJECT_TEMPLATE.md) | Guide for the Project Factory template |
-| [Network Template](docs/NETWORK_TEMPLATE.md) | Guide for the Network (VPC) template |
-| [Private Service Access Template](docs/PRIVATE_SERVICE_ACCESS_TEMPLATE.md) | Guide for the Private Service Access template |
-| [Cloud SQL Template](docs/SQLSERVER_TEMPLATE.md) | Guide for the MSSQL 2019 Web Edition template |
-| [BigQuery Template](docs/BIGQUERY_TEMPLATE.md) | Guide for the BigQuery template |
-| [Buckets Template](docs/BUCKETS_TEMPLATE.md) | Guide for the Cloud Storage buckets template |
-| [Compute Template](docs/COMPUTE_TEMPLATE.md) | Guide for the Compute Instance template and multi-VM architecture |
-| [Secrets Template](docs/SECRETS_TEMPLATE.md) | Guide for the individual Secrets template and multi-secret architecture |
-| [Secret Management](docs/SECRET_MANAGEMENT.md) | Best practices for secret management |
-| [Module Versioning](docs/MODULE_VERSIONING.md) | Managing module versions consistently |
-| [Data Staging Infrastructure](docs/DATA_STAGING.md) | Complete guide for data-staging compute resources and workflows |
-| [IAM Bindings Template](docs/IAM_BINDINGS_TEMPLATE.md) | Guide for the IAM bindings template and service account permissions |
-| [Architecture Summary](docs/ARCHITECTURE_SUMMARY.md) | High-level architecture overview and design decisions |
+| [Bootstrap Guide](docs/BOOTSTRAP.md) | Automated GCP foundation setup |
+| [OpenTofu Setup](docs/OPENTOFU_SETUP.md) | OpenTofu installation and configuration |
+| [GCP Authentication](docs/GCP_AUTHENTICATION.md) | Service account authentication |
+| [Root Configuration](docs/ROOT_CONFIGURATION.md) | root.hcl configuration details |
+| [Architecture Summary](docs/ARCHITECTURE_SUMMARY.md) | High-level architecture and design decisions |
+| [Architecture Diagram](docs/ARCHITECTURE_DIAGRAM.md) | Visual infrastructure diagrams |
 
-## Key Features
+### Environment Guides
 
-### Hierarchical Configuration
-- **Account Level**: Organization-wide settings and billing configuration
-- **Environment Level**: Environment-specific settings (dev, staging, prod)
-- **Project Level**: Project-specific configuration and resources
-- **Regional Level**: Region-specific resources and settings
+| Document | Description |
+|----------|-------------|
+| [Development Infrastructure](docs/DEVELOPMENT_INFRASTRUCTURE.md) | Development environment with two sub-environments |
+| [Network Architecture](docs/NETWORK_ARCHITECTURE.md) | VPC design, subnets, and connectivity patterns |
+| [IP Allocation](docs/IP_ALLOCATION.md) | CIDR allocation across all projects |
+| [GitOps Architecture](docs/GITOPS_ARCHITECTURE.md) | ArgoCD and GitOps workflow patterns |
 
-### CI/CD Automation
-Sophisticated GitHub Actions workflows provide:
-- **Automated validation** on pull requests with detailed plan output
-- **Orchestrated deployment** respecting resource dependencies
-- **Parallel execution** where possible (VPC networks + secrets)
-- **Environment protection** with manual approval for production
-- **Comprehensive reporting** with PR comments and step summaries
-- **Automated script deployment** to GCS buckets after infrastructure changes
+### Template Guides
 
-### Dependency Management
-The infrastructure follows a clear dependency hierarchy:
-1. **Folder** → Creates GCP organizational folders
-2. **Project** → Creates GCP projects within folders
-3. **VPC Network** → Creates networking infrastructure
-4. **Private Service Access** → Enables private connectivity for Google services
-5. **Regional Resources** → Deploys compute instances, storage, and database resources
+| Document | Description |
+|----------|-------------|
+| [Configuration Templates](docs/CONFIGURATION_TEMPLATES.md) | Overview of the template system |
+| [Folder Template](docs/FOLDER_TEMPLATE.md) | GCP folder creation |
+| [Project Template](docs/PROJECT_TEMPLATE.md) | Project Factory module |
+| [Network Template](docs/NETWORK_TEMPLATE.md) | VPC network configuration |
+| [Private Service Access](docs/PRIVATE_SERVICE_ACCESS_TEMPLATE.md) | Private connectivity for managed services |
+| [Compute Template](docs/COMPUTE_TEMPLATE.md) | Compute instances and instance templates |
+| [GKE Template](docs/GKE_TEMPLATE.md) | Private GKE clusters with ArgoCD bootstrap |
+| [Cloud Run Template](docs/CLOUD_RUN_TEMPLATE.md) | Serverless Cloud Run services |
+| [Cloud SQL (MSSQL)](docs/SQLSERVER_TEMPLATE.md) | SQL Server instances |
+| [Cloud SQL (PostgreSQL)](docs/CLOUD_SQL_POSTGRES_TEMPLATE.md) | PostgreSQL instances |
+| [BigQuery Template](docs/BIGQUERY_TEMPLATE.md) | BigQuery datasets |
+| [Buckets Template](docs/BUCKETS_TEMPLATE.md) | Cloud Storage buckets |
+| [Artifact Registry](docs/ARTIFACT_REGISTRY_TEMPLATE.md) | Container image and package registries |
+| [Cloud DNS](docs/CLOUD_DNS_TEMPLATE.md) | DNS zones and records |
+| [Cloud DNS Private Zones](docs/CLOUD_DNS_PRIVATE_ZONES.md) | Private DNS zone patterns |
+| [Cloud Armor](docs/CLOUD_ARMOR_TEMPLATE.md) | WAF security policies |
+| [Certificate Manager](docs/CERTIFICATE_MANAGER_TEMPLATE.md) | Managed TLS certificates |
+| [CAS / PKI](docs/CAS_PKI.md) | Certificate Authority Service |
+| [Secrets Template](docs/SECRETS_TEMPLATE.md) | Secret Manager resources |
+| [IAM Bindings](docs/IAM_BINDINGS_TEMPLATE.md) | Project-level IAM |
+| [Org IAM Bindings](docs/ORG_IAM_BINDINGS_TEMPLATE.md) | Organisation-level IAM |
+| [Service Accounts](docs/SERVICE_ACCOUNTS_TEMPLATE.md) | Service account management |
+| [Workload Identity](docs/WORKLOAD_IDENTITY_TEMPLATE.md) | Workload Identity Federation for GKE |
+| [VPC Peering](docs/VPC_PEERING_GUIDE.md) | VPC peering configuration |
+| [VPC Peering & VPN](docs/VPC_PEERING_AND_VPN_GATEWAY.md) | Combined peering and VPN patterns |
+| [NCC & VPN Gateway](docs/NCC_AND_VPN_GATEWAY.md) | Network Connectivity Center |
 
-### Key Infrastructure Components
+### Operations
 
-#### Example Web Server
-- **Purpose**: Demonstrates compute instance deployment patterns
-- **Architecture**: Standard web server configuration with nginx
-- **Script Components**:
-  - `startup-script.sh` - Instance initialization and configuration
-  - Web server setup and configuration
-  - Health check endpoints
-  - Logging integration
-- **Features**: 
-  - Auto-scaling ready
-  - Load balancer compatible
-  - Cloud CDN integration
-- **Security**: Firewall rules, IAM-based access control, SSL/TLS support
-
-#### SQL Server Infrastructure
-- **Version**: MSSQL 2019 Web Edition
-- **Features**: Dynamic NetBIOS naming, GCS bucket mounting, automated DBA user setup
-- **Security**: Private networking, SSL enforcement, encrypted backups
-
-### Template System
-Standardized templates ensure consistent resource configuration:
-- **Environment-aware settings** (production vs. non-production)
-- **Centralized module versioning** in `_common/common.hcl`
-- **Reusable configurations** with sensible defaults
-- **Security best practices** built-in
-- **Centralized billing data collection** with cross-project usage reports
-- **Multi-resource architecture** supporting instance templates, compute instances, and IAM bindings
-
-#### Available Templates
-- **Infrastructure**: Folder, Project, VPC Network, Private Service Access
-- **Compute**: Compute Instance, Instance Template, External IP
-- **Storage**: Cloud Storage Buckets, BigQuery Datasets
-- **Database**: Cloud SQL (MSSQL 2019)
-- **Security**: Secrets Manager, IAM Bindings, Firewall Rules
-
-### Security Features
-- **Private networking** by default for database resources
-- **No hardcoded secrets** - uses Google Secret Manager
-- **Least privilege** IAM configurations with dedicated service accounts
-- **SSL/TLS enforcement** for all database connections
-- **Audit logging** enabled for all projects
-- **SSH key encryption** with secure cleanup after use
-- **Bucket-level access policies** for GCS resources
-- **Pre-commit hooks** for secret detection and code quality
-- **Modular script architecture** for security isolation
-- **Automated resource cleanup** ensuring no stale permissions
+| Document | Description |
+|----------|-------------|
+| [GitHub Workflows](docs/WORKFLOWS.md) | CI/CD automation and workflow guide |
+| [Module Versioning](docs/MODULE_VERSIONING.md) | Centralised module version management |
+| [Secret Management](docs/SECRET_MANAGEMENT.md) | Secret management best practices |
+| [Web Server Example](docs/WEB_SERVER_EXAMPLE.md) | Compute instance deployment example |
 
 ## CI/CD Workflows
 
-### Automated Engine Workflows
-- **PR Validation Engine** (`terragrunt-pr-engine.yml`): Validates all infrastructure changes on pull requests
-- **Apply Engine** (`terragrunt-apply-engine.yml`): Automatically deploys changes merged to main/develop branches
-- **Resource-aware execution**: Respects dependency order and runs parallel operations where possible
+Workflows are located in `.github/workflows.disabled/`. Move to `.github/workflows/` to activate.
 
-### Manual Management Workflows
-- **Manage Compute Instance** (`manage-compute-instance.yml`)
-  - Deploy/destroy specific compute instances
-  - Format: `project/instance` (e.g., `org-dev-01/web-server-01`)
-  - Supports comprehensive resource management (VM + IAM bindings)
-  
-- **Manage SQL Instance** (`manage-sql-instance.yml`)
-  - Manage SQL Server instances with specialized handling
-  - Format: `project/instance` (e.g., `org-dev-01/sql-server-01`)
-  - Handles private networking and SSL configuration
-  
-- **Upload VM Scripts** (`upload-vm-scripts.yml`)
-  - Deploys VM scripts to GCS buckets
-  - Automatically triggered after infrastructure deployments
-  - Supports force upload option for manual runs
+### Main Engine
 
-### Workflow Features
-- **Comprehensive resource management**: Destroys and recreates all resources (VM + IAM bindings)
-- **Environment variable configuration**: Pass parameters via TF_VAR_* variables
-- **Automated scheduling**: Cron-based execution for regular operations
-- **Detailed reporting**: GitHub step summaries and logs integration
-- **Concurrency control**: Prevents overlapping deployments
-- **Dependency resolution**: Automatic handling of resource dependencies
-- **Rollback capability**: Failed deployments don't leave partial resources
+The **Terragrunt Main Engine** (`terragrunt-main-engine.yml`) orchestrates infrastructure deployment:
+- Detects changed resources automatically via `detect_changes.py`
+- Respects dependency order across 30+ resource types (defined in `resource-definitions.yml`)
+- Runs `plan` on PRs, `apply` on merge to main
+- Parallel execution where dependencies allow
 
-For detailed workflow documentation, see [GitHub Workflows Guide](docs/WORKFLOWS.md).
+### Management Workflows
+
+| Workflow | Purpose |
+|----------|---------|
+| `manage-compute-instance.yml` | Deploy/destroy compute instances |
+| `manage-sql-instance.yml` | Manage SQL Server instances |
+| `manage-gke-cluster.yml` | Manage GKE clusters |
+| `upload-vm-scripts.yml` | Deploy VM scripts to GCS buckets |
+
+### Supporting Files
+
+- `.github/actions/detect-infrastructure-changes/` — Composite action for change detection
+- `.github/scripts/detect_changes.py` — Python-based change detection logic
+- `.github/workflow-config/resource-definitions.yml` — Resource type definitions and dependencies
+- `.github/CODEOWNERS` — Security review requirements for IAM changes
 
 ## Development Best Practices
 
 ### Infrastructure Development
-1. **Always use Terragrunt commands** - Never use terraform/tofu directly
-2. **Check existing patterns** in `_common/templates/` before creating new resources
-3. **Use templates** for consistency - don't create resources from scratch
-4. **Update module versions** in `_common/common.hcl` centrally
-5. **Test changes** with `terragrunt plan` before applying
-6. **Follow the established directory structure** for new resources
+1. **Always use Terragrunt** — never use terraform/tofu directly
+2. **Check existing templates** in `_common/templates/` before creating resources
+3. **Use `include "base"`** for consistent hierarchy reading
+4. **Update module versions** centrally in `_common/common.hcl`
+5. **Test with `terragrunt plan`** before applying
+6. **Follow the dependency order**: Folder → Project → VPC → PSA → Resources
+
+### Security
+1. **Never commit secrets** — use Google Secret Manager
+2. **Use dedicated service accounts** with least privilege
+3. **Enable audit logging** for all projects
+4. **Private networking** by default for databases and internal services
+5. **SSL/TLS enforcement** for all database connections
+6. **Pre-commit hooks** for secret detection and HCL formatting
 
 ### Code Quality
-1. **Run pre-commit hooks** before committing changes
-2. **Use the parse_resource_order.py** script to verify dependencies
-3. **Document significant changes** in the appropriate docs/ file
-
-### Workflow Development
-1. **Workflows must be in `.github/workflows/`** - don't create elsewhere
-2. **Use the project/instance format** for resource identification
-3. **Include comprehensive logging** and step summaries
-4. **Test workflows** in a development environment first
-
-### Security Practices
-1. **Never commit secrets** - use Google Secret Manager
-2. **Use dedicated service accounts** with least privilege
-3. **Enable audit logging** for all new projects
-4. **Review IAM bindings** regularly for unnecessary permissions
+1. Run `pre-commit run --all-files` before committing
+2. Use `parse_resource_order.py` to verify dependencies
+3. Document significant changes in the appropriate `docs/` file
+4. Follow established naming conventions (`org-` prefix for shared resources)
 
 ## References
 
 - [Terragrunt Documentation](https://terragrunt.gruntwork.io/docs/)
 - [OpenTofu Documentation](https://opentofu.org/docs/)
 - [Google Cloud Documentation](https://cloud.google.com/docs)
-- [terraform-google-modules](https://github.com/terraform-google-modules) - Official GCP modules
+- [terraform-google-modules](https://github.com/terraform-google-modules) — Official GCP modules
 - [Gruntwork Reference Architecture](https://github.com/gruntwork-io/terragrunt-infrastructure-live-example)

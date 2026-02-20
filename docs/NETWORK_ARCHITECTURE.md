@@ -266,7 +266,7 @@ flowchart TB
             PROD_BLOCK["Production<br/>10.0.0.0/8<br/>16.7M IPs"]
         end
         
-        subgraph DEV_ENV["dev-01 Environment"]
+        subgraph DEV_ENV["dp-dev-01 Environment"]
             DEV_01["10.132.0.0/16<br/>65,536 IPs"]
             
             subgraph SUBNETS["Subnet Allocation"]
@@ -299,7 +299,7 @@ Each environment receives a /16 block (65,536 IPs):
 
 | Environment | CIDR Block | Subnets | Available IPs |
 |-------------|------------|---------|---------------|
-| dev-01 | 10.132.0.0/16 | 4 primary + 2 secondary | 31,616 |
+| dp-dev-01 | 10.132.0.0/16 | 4 primary + 2 secondary | 31,616 |
 | dev-02 | 10.133.0.0/16 | Reserved | 65,536 |
 | dev-03 | 10.134.0.0/16 | Reserved | 65,536 |
 
@@ -426,7 +426,7 @@ For detailed template usage and configuration examples, see [NETWORK_TEMPLATE.md
 #### Step 1: Deploy VPC Network
 
 ```bash
-cd live/non-production/development/dev-01/vpc-network
+cd live/non-production/development/dp-dev-01/vpc-network
 terragrunt init
 terragrunt plan
 terragrunt apply
@@ -483,15 +483,15 @@ tags = ["nat-enabled", "other-tags"]
 
 ```bash
 # Verify VPC creation
-gcloud compute networks list --project=dev-01
-gcloud compute networks subnets list --project=dev-01
+gcloud compute networks list --project=dp-dev-01
+gcloud compute networks subnets list --project=dp-dev-01
 
 # Test NAT gateway functionality
-gcloud compute ssh instance-name --project=dev-01 --zone=europe-west2-a
+gcloud compute ssh instance-name --project=dp-dev-01 --zone=europe-west2-a
 curl https://api.ipify.org  # Should return NAT gateway IP
 
 # Verify firewall rules
-gcloud compute firewall-rules list --project=dev-01
+gcloud compute firewall-rules list --project=dp-dev-01
 ```
 
 #### GKE Cluster Verification
@@ -499,7 +499,7 @@ gcloud compute firewall-rules list --project=dev-01
 ```bash
 # Get cluster credentials
 gcloud container clusters get-credentials cluster-01 \
-  --region=europe-west2 --project=dev-01
+  --region=europe-west2 --project=dp-dev-01
 
 # Verify pod networking
 kubectl get pods --all-namespaces -o wide

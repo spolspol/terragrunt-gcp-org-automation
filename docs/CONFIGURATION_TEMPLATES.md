@@ -36,13 +36,7 @@ Each template follows a consistent structure:
 ```hcl
 # Module source and version
 terraform {
-  source = "git::https://github.com/terraform-google-modules/module-name.git//path?ref=${local.module_versions.module_name}"
-}
-
-# Local variables for configuration
-locals {
-  module_versions = read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals.module_versions
-  # Additional template-specific locals
+  source = "git::https://github.com/terraform-google-modules/module-name.git//path?ref=${include.base.locals.module_versions.module_name}"
 }
 
 # Default inputs
@@ -50,6 +44,8 @@ inputs = {
   # Template-specific default values
 }
 ```
+
+Templates access module versions and merged configuration via `include.base.locals`, which is provided by the `base.hcl` include (see [Usage Guidelines](#usage-guidelines) below).
 
 ## Common Patterns
 
@@ -74,18 +70,15 @@ locals {
   
   selected_config = local.environment_config[local.environment_type]
 }
+```
 
 ### Module Versioning
 
-All templates use centralized module versioning from `_common/common.hcl`:
+All templates use centralized module versioning via `base.hcl`, which reads `_common/common.hcl` automatically:
 
 ```hcl
-locals {
-  module_versions = read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals.module_versions
-}
-
 terraform {
-  source = "git::https://github.com/terraform-google-modules/terraform-google-project-factory.git//modules/core_project_factory?ref=${local.module_versions.project_factory}"
+  source = "git::https://github.com/terraform-google-modules/terraform-google-project-factory.git//modules/core_project_factory?ref=${include.base.locals.module_versions.project_factory}"
 }
 ```
 
@@ -108,38 +101,37 @@ dependency "vpc-network" {
 
 ### Including Templates
 
-Always include the root configuration and the specific template:
+Always include the root configuration, `base.hcl` for merged configuration, and the specific template:
 
 ```hcl
 include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "template_name" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/template_name.hcl"
+  path           = "${get_repo_root()}/_common/templates/template_name.hcl"
+  merge_strategy = "deep"
 }
 ```
 
-### Merging Configuration
+### Accessing Merged Configuration
 
-Merge template inputs with local configuration:
+The `base.hcl` include automatically reads and merges all hierarchy files (`account.hcl`, `env.hcl`, `project.hcl`, `region.hcl`, and `common.hcl`). Access merged values via `include.base.locals`:
 
 ```hcl
-locals {
-  merged_vars = merge(
-    read_terragrunt_config(find_in_parent_folders("account.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("env.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("project.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals
-  )
-}
+inputs = {
+  project_id  = include.base.locals.merged.project_name
+  region      = include.base.locals.region
+  environment = include.base.locals.environment
+  labels      = include.base.locals.standard_labels
 
-inputs = merge(
-  read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/template_name.hcl").inputs,
-  local.merged_vars,
-  {
-    # Custom configuration overrides
-  }
+  # Custom configuration overrides
+}
 ```
 
 ### Variable Hierarchy
@@ -147,7 +139,7 @@ inputs = merge(
 Configuration follows this precedence (highest to lowest):
 1. Local `inputs` block overrides
 2. Template default inputs
-3. Common configuration from `_common/common.hcl`
+3. Merged configuration from `base.hcl` (reads `_common/common.hcl`, `account.hcl`, `env.hcl`, `project.hcl`, `region.hcl`)
 4. Project-specific configuration from `project.hcl`
 5. Environment configuration from `env.hcl`
 6. Account configuration from `account.hcl`

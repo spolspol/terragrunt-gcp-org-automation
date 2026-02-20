@@ -1,0 +1,49 @@
+name: "Detect Infrastructure Changes"
+description: "Detects changes in infrastructure resources based on definitions"
+
+inputs:
+  resource-definitions:
+    description: "Path to resource definitions YAML"
+    required: true
+  base-ref:
+    description: "Base git ref"
+    required: true
+  head-ref:
+    description: "Head git ref"
+    required: true
+outputs:
+  changes:
+    description: "JSON map of changed resources"
+    value: ${{ steps.detect.outputs.changes }}
+  emojis:
+    description: "JSON map of resource emojis"
+    value: ${{ steps.detect.outputs.emojis }}
+  names:
+    description: "JSON map of resource names"
+    value: ${{ steps.detect.outputs.names }}
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+        cache: "pip"
+        cache-dependency-path: .github/scripts/requirements.txt
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install -r .github/scripts/requirements.txt
+
+    - name: Detect Changes
+      id: detect
+      shell: bash
+      run: |
+        echo "Detecting changes between ${{ inputs.base-ref }} and ${{ inputs.head-ref }}..."
+
+        # Script now writes directly to GITHUB_OUTPUT
+        python3 .github/scripts/detect_changes.py \
+          --definitions "${{ inputs.resource-definitions }}" \
+          --base-ref "${{ inputs.base-ref }}" \
+          --head-ref "${{ inputs.head-ref }}"

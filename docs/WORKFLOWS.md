@@ -2,6 +2,15 @@
 
 This document provides comprehensive information about the GitHub Actions workflows that manage CI/CD and infrastructure operations for the Terragrunt GCP infrastructure.
 
+## ⚠️ Workflow Status
+
+**Current State**: Workflows are currently **DISABLED** and located in `.github/workflows.disabled/`
+
+To enable workflows:
+1. Move workflow files from `.github/workflows.disabled/` to `.github/workflows/`
+2. Ensure GitHub Actions is enabled in repository settings
+3. Configure required secrets (see Security Configuration section)
+
 ## Overview
 
 The repository uses a sophisticated GitHub Actions workflow system that provides both automated infrastructure management and manual operational controls. The system is designed to:
@@ -16,13 +25,95 @@ The repository uses a sophisticated GitHub Actions workflow system that provides
 
 ## Workflow Architecture
 
+### System Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph "GitHub Actions Workflow System"
+        subgraph TRIGGERS["🎯 Triggers"]
+            PR["Pull Request"]
+            PUSH["Push to main/develop"]
+            MANUAL["Manual Dispatch"]
+            SCHEDULE["Scheduled"]
+        end
+        
+        subgraph ENGINES["⚙️ Engine Workflows"]
+            VALIDATION["Validation Engine<br/>terragrunt-pr-engine.yml"]
+            DEPLOYMENT["Deployment Engine<br/>terragrunt-apply-engine.yml"]
+        end
+        
+        subgraph MANAGERS["🎮 Management Workflows"]
+            COMPUTE_MGR["Compute Manager<br/>manage-compute-instance.yml"]
+            SQL_MGR["SQL Manager<br/>manage-sql-instance.yml"]
+            GKE_MGR["GKE Manager<br/>manage-gke-cluster.yml"]
+            SCRIPT_MGR["Script Uploader<br/>upload-vm-scripts.yml"]
+        end
+        
+        subgraph COMMON["📦 Reusable Components"]
+            ENV["Common ENV<br/>common-env.yml"]
+        end
+        
+        subgraph INFRA["🏗️ Infrastructure"]
+            GCP["Google Cloud Platform"]
+        end
+    end
+    
+    PR --> VALIDATION
+    PUSH --> DEPLOYMENT
+    PUSH --> SCRIPT_MGR
+    MANUAL --> COMPUTE_MGR
+    MANUAL --> SQL_MGR
+    MANUAL --> GKE_MGR
+    MANUAL --> SCRIPT_MGR
+    
+    VALIDATION --> ENV
+    DEPLOYMENT --> ENV
+    COMPUTE_MGR --> ENV
+    SQL_MGR --> ENV
+    GKE_MGR --> ENV
+    
+    DEPLOYMENT --> GCP
+    COMPUTE_MGR --> GCP
+    SQL_MGR --> GCP
+    GKE_MGR --> GCP
+    SCRIPT_MGR --> GCP
+    
+    classDef trigger fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef engine fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef manager fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef common fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef infra fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    
+    class PR,PUSH,MANUAL,SCHEDULE trigger
+    class VALIDATION,DEPLOYMENT engine
+    class COMPUTE_MGR,SQL_MGR,GKE_MGR,SCRIPT_MGR manager
+    class ENV common
+    class GCP infra
+```
+
 ### Three-Tier System
 
 The workflow system operates on three tiers:
 
-1. **Automatic Engine Workflows** - Handle automated CI/CD for infrastructure changes
-2. **Manual Management Workflows** - Provide controlled operations for specific resources
-3. **Reusable Component Workflows** - Shared components used by other workflows
+1. **🔄 Automatic Engine Workflows** - Handle automated CI/CD for infrastructure changes
+2. **🎮 Manual Management Workflows** - Provide controlled operations for specific resources
+3. **📦 Reusable Component Workflows** - Shared components used by other workflows
+
+## Workflow Configuration
+
+### Common Environment Variables
+
+All workflows use centralized environment configuration through `common-env.yml`:
+
+| Variable | Default Value | Description |
+|----------|--------------|-------------|
+| `TERRAGRUNT_VERSION` | 0.99.x | Terragrunt CLI version |
+| `TOFU_VERSION` | 1.11.x | OpenTofu version |
+| `GCP_PROJECT_ID` | automation | Default GCP project |
+| `GCP_REGION` | europe-west2 | Default region |
+| `TG_EXPERIMENT_MODE` | true | Terragrunt experimental features |
+| `TG_NON_INTERACTIVE` | true | Non-interactive mode |
+| `TG_BACKEND_BOOTSTRAP` | true | Auto-create backend bucket |
 
 ## Automatic Engine Workflows
 
@@ -30,79 +121,183 @@ These workflows handle the automated CI/CD pipeline for infrastructure changes.
 
 ### Core Engine Workflows
 
-| Workflow | Purpose | Trigger | File |
-|----------|---------|---------|------|
-| **Validation Engine** | Validate changes before merge | `pull_request` | `terragrunt-pr-engine.yml` |
-| **Deployment Engine** | Deploy infrastructure changes | `push` | `terragrunt-apply-engine.yml` |
+| Workflow | Purpose | Trigger | File | Concurrency |
+|----------|---------|---------|------|-------------|
+| **Validation Engine** | Validate changes before merge | `pull_request` | `terragrunt-pr-engine.yml` | PR-based |
+| **Deployment Engine** | Deploy infrastructure changes | `push` to main/develop | `terragrunt-apply-engine.yml` | Sequential |
+
+### CI/CD Pipeline Flow
+
+```mermaid
+flowchart LR
+    subgraph "CI/CD Pipeline"
+        subgraph DEV["Developer"]
+            CODE["📝 Code Changes"]
+            COMMIT["💾 Commit"]
+        end
+        
+        subgraph PR_PHASE["Pull Request Phase"]
+            CREATE_PR["Create PR"]
+            DETECT_CHG["Detect Changes"]
+            VALIDATE["Validate Resources"]
+            PR_CHECK["PR Checks"]
+        end
+        
+        subgraph MERGE_PHASE["Merge Phase"]
+            APPROVE["Approve PR"]
+            MERGE["Merge to main"]
+        end
+        
+        subgraph DEPLOY_PHASE["Deployment Phase"]
+            DETECT_DEPLOY["Detect Changes"]
+            ORDER["Order Resources"]
+            DEPLOY["Deploy in Order"]
+            VERIFY["Verify Deployment"]
+        end
+    end
+    
+    CODE --> COMMIT --> CREATE_PR
+    CREATE_PR --> DETECT_CHG --> VALIDATE --> PR_CHECK
+    PR_CHECK -->|Pass| APPROVE
+    APPROVE --> MERGE
+    MERGE --> DETECT_DEPLOY --> ORDER --> DEPLOY --> VERIFY
+    
+    classDef dev fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef pr fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef merge fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef deploy fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    
+    class CODE,COMMIT dev
+    class CREATE_PR,DETECT_CHG,VALIDATE,PR_CHECK pr
+    class APPROVE,MERGE merge
+    class DETECT_DEPLOY,ORDER,DEPLOY,VERIFY deploy
+```
 
 ### Supported Resource Types
 
 The engine workflows support the following GCP resource types:
 
-| Resource Type | Description | Template Path | Example Paths |
-|---------------|-------------|---------------|---------------|
-| **📁 Folder** | GCP organizational folders | `_common/templates/folder.hcl` | `live/**/folder/` |
-| **📦 Project** | GCP projects | `_common/templates/project.hcl` | `live/**/project/` |
-| **🌐 VPC Network** | Virtual Private Cloud networks | `_common/templates/network.hcl` | `live/**/*-vpc-network/`, `live/**/vpc-network/` |
-| **🌍 External IP** | Static external IP addresses | `_common/templates/external_ip.hcl` | `live/**/external-ips/*/` |
-| **🔥 Firewall Rules** | VPC firewall rules | `_common/templates/firewall_rules.hcl` | `live/**/firewall-rules/*/` |
-| **🔗 Private Service Access** | Private service connections | `_common/templates/private_service_access.hcl` | `live/**/*-psa/` |
-| **🪣 Buckets** | Cloud Storage buckets | `_common/templates/cloud_storage.hcl` | `live/**/buckets/*/` |
-| **🔐 Secrets** | Secret Manager secrets | `_common/templates/secret_manager.hcl` | `live/**/secrets/*/` |
-| **📊 BigQuery** | BigQuery datasets | `_common/templates/bigquery.hcl` | `live/**/bigquery/*/` |
-| **🗄️ Cloud SQL** | Cloud SQL databases | `_common/templates/cloud_sql.hcl` | `live/**/cloud-sql/*/` |
-| **🚀 Instance Templates** | Compute Engine templates | `_common/templates/instance_template.hcl` | `live/**/compute/*/` |
-| **💻 Compute Instances** | Virtual machine instances | `_common/templates/compute_instance.hcl` | `live/**/compute/*/vm/` |
+| Resource Type | Icon | Description | Template Path | Detection Pattern |
+|---------------|------|-------------|---------------|-------------------|
+| **Folder** | 📁 | GCP organizational folders | `_common/templates/folder.hcl` | `live/**/folder/` |
+| **Project** | 📦 | GCP projects | `_common/templates/project.hcl` | `live/**/project/` |
+| **VPC Network** | 🌐 | Virtual Private Cloud networks | `_common/templates/network.hcl` | `live/**/*vpc-network/` |
+| **External IP** | 🌍 | Static external IP addresses | `_common/templates/external_ip.hcl` | `live/**/external-ips/*/` |
+| **Cloud Router** | 🔄 | BGP routers for NAT | `_common/templates/cloud_router.hcl` | `live/**/cloud-router/` |
+| **Cloud NAT** | 🚪 | Network Address Translation | `_common/templates/cloud_nat.hcl` | `live/**/cloud-nat/` |
+| **Firewall Rules** | 🔥 | VPC firewall rules | `_common/templates/firewall_rules.hcl` | `live/**/firewall-rules/*/` |
+| **Private Service Access** | 🔗 | Private service connections | `_common/templates/private_service_access.hcl` | `live/**/*-psa/` |
+| **Buckets** | 🪣 | Cloud Storage buckets | `_common/templates/cloud_storage.hcl` | `live/**/buckets/*/` |
+| **Secrets** | 🔐 | Secret Manager secrets | `_common/templates/secret_manager.hcl` | `live/**/secrets/*/` |
+| **BigQuery** | 📊 | BigQuery datasets | `_common/templates/bigquery.hcl` | `live/**/bigquery/*/` |
+| **Cloud SQL** | 🗄️ | Cloud SQL databases | `_common/templates/cloud_sql.hcl` | `live/**/cloud-sql/*/` |
+| **Instance Templates** | 🚀 | Compute Engine templates | `_common/templates/instance_template.hcl` | `live/**/compute/*/` |
+| **Compute Instances** | 💻 | Virtual machine instances | `_common/templates/compute_instance.hcl` | `live/**/compute/*/vm/` |
+| **GKE Clusters** | ⚙️ | Kubernetes clusters | `_common/templates/gke.hcl` | `live/**/gke/*/` |
+| **IAM Bindings** | 👤 | IAM role bindings | `_common/templates/iam_bindings.hcl` | `live/**/iam-bindings/` |
 
-### Execution Order
+### Resource Dependency Order
 
-The engine workflows follow this dependency-aware execution order:
-
+```mermaid
+flowchart TB
+    subgraph "Resource Deployment Order"
+        FOLDER["📁 Folder<br/>Step 1"]
+        PROJECT["📦 Project<br/>Step 2"]
+        
+        subgraph PARALLEL_1["Step 3 (Parallel)"]
+            VPC["🌐 VPC Network"]
+            SECRETS["🔐 Secrets"]
+            BUCKETS["🪣 Buckets"]
+            BIGQUERY["📊 BigQuery"]
+        end
+        
+        subgraph PARALLEL_2["Step 4 (Parallel)"]
+            EXT_IP["🌍 External IPs"]
+            ROUTER["🔄 Cloud Router"]
+            FW_RULES["🔥 Firewall Rules"]
+            PSA["🔗 Private Service Access"]
+            INST_TPL["🚀 Instance Templates"]
+        end
+        
+        subgraph PARALLEL_3["Step 5 (Parallel)"]
+            NAT["🚪 Cloud NAT"]
+            SQL["🗄️ Cloud SQL"]
+        end
+        
+        subgraph PARALLEL_4["Step 6 (Parallel)"]
+            COMPUTE["💻 Compute Instances"]
+            GKE["⚙️ GKE Clusters"]
+        end
+        
+        subgraph PARALLEL_5["Step 7 (Parallel)"]
+            PROJ_IAM["👤 Project IAM"]
+            INST_IAM["👤 Instance IAM"]
+            GKE_IAM["👤 GKE IAM"]
+        end
+    end
+    
+    FOLDER --> PROJECT
+    PROJECT --> PARALLEL_1
+    VPC --> PARALLEL_2
+    ROUTER --> NAT
+    PSA --> SQL
+    INST_TPL --> COMPUTE
+    VPC --> GKE
+    EXT_IP --> GKE
+    COMPUTE --> INST_IAM
+    GKE --> GKE_IAM
+    PROJECT --> PROJ_IAM
+    
+    classDef step1 fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef step2 fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef step3 fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef step4 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef step5 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef step6 fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef step7 fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
+    
+    class FOLDER step1
+    class PROJECT step2
+    class VPC,SECRETS,BUCKETS,BIGQUERY step3
+    class EXT_IP,ROUTER,FW_RULES,PSA,INST_TPL step4
+    class NAT,SQL step5
+    class COMPUTE,GKE step6
+    class PROJ_IAM,INST_IAM,GKE_IAM step7
 ```
-📁 folder
-└── 📦 project
-    ├── 🌐 vpc-network
-    │   ├── 🌍 external-ip
-    │   ├── 🔥 firewall-rules
-    │   ├── 🔗 private-service-access
-    │   │   └── 🗄️ cloud-sql
-    │   └── 🚀 instance-templates
-    │       └── 💻 compute
-    ├── 🪣 buckets
-    ├── 🔐 secrets
-    └── 📊 bigquery
-```
-
-**Step-by-Step Execution:**
-
-1. **Step 1**: 📁 Folders - Foundation organizational structure
-2. **Step 2**: 📦 Projects - GCP projects that depend on folders
-3. **Step 3**: 🌐 VPC Networks + 🔐 Secrets + 🪣 Buckets + 📊 BigQuery - Run in parallel after projects
-4. **Step 4**: 🌍 External IPs + 🔥 Firewall Rules + 🔗 Private Service Access + 🚀 Instance Templates - Run in parallel after VPC
-5. **Step 5**: 🗄️ Cloud SQL - Database instances that depend on private service access
-6. **Step 6**: 💻 Compute Instances - Virtual machines that depend on instance templates
 
 ### Engine Workflow Features
 
-#### Change Detection
+#### Change Detection Process
+
+```mermaid
+flowchart LR
+    subgraph "Change Detection"
+        GIT_DIFF["Git Diff"]
+        FILE_PATTERNS["File Pattern<br/>Matching"]
+        RESOURCE_DIRS["Extract Resource<br/>Directories"]
+        TEMPLATE_CHG["Template Change<br/>Detection"]
+        BUILD_ORDER["Build Execution<br/>Order"]
+    end
+    
+    GIT_DIFF --> FILE_PATTERNS
+    FILE_PATTERNS --> RESOURCE_DIRS
+    FILE_PATTERNS --> TEMPLATE_CHG
+    RESOURCE_DIRS --> BUILD_ORDER
+    TEMPLATE_CHG --> BUILD_ORDER
+```
+
+**Key Features:**
 - **File-based detection** using git diff
 - **Template change handling** - if common templates change, all resources of that type are processed
 - **Dependency-aware** - understands relationships between resource types
-- **Example resource filtering** - automatically excludes resources with certain patterns
+- **Deletion detection** - identifies removed resources for cleanup
 
-#### Parallel Execution
+#### Parallel Execution Strategy
+
 - **Step 3** resources run in parallel (VPC Networks, Secrets, Buckets, BigQuery)
 - **Step 4** resources run in parallel after VPC dependencies are met
-- **Steps 5 and 6** run sequentially based on specific dependencies
+- **Steps 5-7** run based on specific dependencies
 - **Execution stops** at the first failure to prevent cascading issues
-
-#### Example Resource Filtering
-
-Certain resources may be automatically excluded from CI/CD operations based on naming patterns:
-
-**Example Excluded Resources:**
-- Test or temporary resources
-- Resources with specific prefixes
 
 ## Manual Management Workflows
 
@@ -110,376 +305,422 @@ These workflows provide controlled operations for specific infrastructure resour
 
 ### Available Management Workflows
 
-| Workflow | Purpose | Resources | Input Format |
-|----------|---------|-----------|--------------|
-| **Manage Compute Instance** | Apply/destroy specific VM instances | Compute Engine VMs | `project/instance` format |
-| **Manage SQL Instance** | Apply/destroy SQL Server instances | Compute Engine SQL VMs | `project/instance` format |
-| **Upload VM Scripts** | Upload VM scripts to GCS buckets | VM script files | Automatic/Manual trigger |
+| Workflow | Purpose | Trigger | Resources | Input Format |
+|----------|---------|---------|-----------|--------------|
+| **Manage Compute Instance** | Apply/destroy specific VM instances | Manual | Compute Engine VMs | `project/instance` |
+| **Manage SQL Instance** | Apply/destroy SQL Server instances | Manual | SQL Server VMs | `project/instance` |
+| **Manage GKE Cluster** | Plan/apply/destroy GKE clusters | Manual | GKE clusters | `project/cluster` |
+| **Upload VM Scripts** | Upload VM scripts to GCS buckets | Auto/Manual | Script files | Automatic detection |
+
+### Manual Workflow Interaction Flow
+
+```mermaid
+flowchart TB
+    subgraph "Manual Workflow Execution"
+        USER["👤 User"]
+        INPUT["Input Parameters"]
+        VALIDATE["Validate Inputs"]
+        AUTH["GCP Authentication"]
+        EXECUTE["Execute Terragrunt"]
+        REPORT["Generate Report"]
+        
+        USER --> INPUT
+        INPUT --> VALIDATE
+        VALIDATE -->|Valid| AUTH
+        VALIDATE -->|Invalid| ERROR["❌ Error"]
+        AUTH --> EXECUTE
+        EXECUTE --> REPORT
+        REPORT --> USER
+    end
+    
+    classDef user fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef process fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef error fill:#ffebee,stroke:#c62828,stroke-width:2px
+    
+    class USER user
+    class INPUT,VALIDATE,AUTH,EXECUTE,REPORT process
+    class ERROR error
+```
 
 ### Compute Instance Management
 
-**File**: `manage-compute-instance.yml`
+**File**: `manage-compute-instance.yml`  
 **Trigger**: Manual (`workflow_dispatch`)
-
-**Supported Instances**:
-- `dev-01/web-server-01`
-- `dev-01/app-server-01`
-
-**Operations**:
-- Apply (deploy/update instance)
-- Destroy (with confirmation required)
 
 **Features**:
 - Project/instance format validation
-- Destroy confirmation requirement
+- Destroy confirmation requirement (must type "DESTROY")
 - Concurrency protection
 - Detailed execution reporting
+- Binary caching for Terragrunt and OpenTofu
+
+**Example Instances**:
+```yaml
+- web-project/web-server-01
+- org-dp-dev-01/app-server-01
+```
 
 ### SQL Instance Management
 
-**File**: `manage-sql-instance.yml`
+**File**: `manage-sql-instance.yml`  
 **Trigger**: Manual (`workflow_dispatch`)
 
-**Supported Instances**:
-- `data-staging/sql-server-01`
-
-**Operations**:
-- Apply (deploy/update SQL Server)
-- Destroy (no confirmation required for SQL instances)
-
 **Features**:
-- Project/instance format validation
-- Automatic instance path detection
-- Concurrency protection
-- SQL Server specific optimizations
+- Manages SQL Server VMs (not Cloud SQL instances)
+- No destroy confirmation required
+- Project validation
+- Execution summary generation
 
-
-### VM Scripts Upload
-
-**File**: `upload-vm-scripts.yml`
-**Trigger**: Automatic (`push`) or Manual (`workflow_dispatch`)
-
-**Triggering Events**:
-- Automatically when VM scripts are pushed to main branch
-- Manually with optional force upload flag
-
-**Operations**:
-- Detect changes in VM script files
-- Discover vm-scripts buckets in target projects
-- Upload scripts to appropriate VM type folders
-- Verify successful uploads
-
-**Features**:
-- Automatic trigger on script changes (`live/**/compute/*/scripts/*.sh`)
-- Independent of infrastructure deployments
-- Force upload option for manual runs
-- Change detection for efficient uploads
-- Support for multiple VM types and projects
-- Comprehensive verification and reporting
-
-## Reusable Component Workflows
-
-These workflows provide shared functionality used by other workflows.
-
-### Core Reusable Workflows
-
-| Workflow | Purpose | Used By | File |
-|----------|---------|---------|------|
-| **Common Environment Variables** | Centralized environment configuration | All workflows | `common-env.yml` |
-| **Terragrunt Unified** | Core terragrunt operations engine | Engine workflows | `terragrunt-reusable.yaml` |
-
-### Common Environment Variables
-
-**File**: `common-env.yml`
-**Type**: Reusable workflow (`workflow_call`)
-
-**Provides**:
+**Example Instances**:
 ```yaml
-outputs:
-  terragrunt_version: "0.80.2"
-  tofu_version: "1.9.1"
-  gcp_project_id: "org-test-dev"
-  gcp_region: "europe-west2"
-  tg_experiment_mode: "true"
-  tg_non_interactive: "true"
-  tg_backend_bootstrap: "false"
+- org-dp-dev-01/sql-server-01
+- org-prod-01/sql-server-main
 ```
 
-### Terragrunt Unified
+### GKE Cluster Management
 
-**File**: `terragrunt-reusable.yaml`
-**Type**: Reusable workflow (`workflow_call`)
+**File**: `manage-gke-cluster.yml`  
+**Trigger**: Manual (`workflow_dispatch`)
 
-**Capabilities**:
-- **Dual mode operation**: validate or apply
-- **Multi-resource support**: handles various resource types
-- **Path-based processing**: JSON array configuration
-- **Exclusion support**: filters out deleted/example resources
-- **Rich reporting**: GitHub step summaries and PR comments
-- **Error handling**: comprehensive error reporting and debugging
+**Operations**:
+- **Plan**: Preview changes without applying
+- **Apply**: Deploy or update cluster
+- **Destroy**: Remove cluster (handles deletion protection)
+
+**Features**:
+- Environment-based path resolution
+- Cluster credential retrieval after deployment
+- Deletion protection handling for destroy operations
+- Detailed summary output
 
 **Input Parameters**:
-```yaml
-inputs:
-  mode: "validate" | "apply"
-  resource_type: "vpc-network" | "compute" | etc.
-  resource_paths: JSON array of path patterns
-  template_path: Common template path
-  resource_emoji: Display emoji
-  excluded_resources: JSON array of excluded paths
+- `action`: plan/apply/destroy
+- `cluster`: project/cluster-name format
+- `environment`: development/staging/production
+
+### VM Script Upload
+
+**File**: `upload-vm-scripts.yml`  
+**Triggers**: 
+- Automatic on push (when scripts change)
+- Manual with force upload option
+
+**Features**:
+- Automatic detection of changed scripts
+- Bucket discovery using naming patterns
+- Multi-project support
+- Force upload capability
+- Version tracking with timestamps
+
+## Workflow Execution Details
+
+### Binary Caching Strategy
+
+```mermaid
+flowchart LR
+    subgraph "Binary Management"
+        CHECK["Check Cache"]
+        HIT["Cache Hit"]
+        MISS["Cache Miss"]
+        DOWNLOAD["Download Binaries"]
+        STORE["Store in Cache"]
+        USE["Use Binaries"]
+    end
+    
+    CHECK --> HIT --> USE
+    CHECK --> MISS --> DOWNLOAD --> STORE --> USE
 ```
 
-## Usage Patterns
+**Cached Binaries**:
+- Terragrunt (0.99.x)
+- OpenTofu (1.11.x)
+- Cache key: `terragrunt-{version}-tofu-{version}-{os}`
 
-### Automated Infrastructure Changes
+### Concurrency Control
 
-#### Single Resource Changes
-1. **Create a PR** with your infrastructure changes
-2. **Validation Engine triggers** automatically
-3. **Review validation results** in PR comments
-4. **Merge the PR** if validation passes
-5. **Deployment Engine** applies changes automatically
+| Workflow Type | Concurrency Group | Strategy |
+|--------------|------------------|----------|
+| PR Validation | `pr-engine-{pr-number}` | Cancel in-progress |
+| Deployment | Sequential | No parallel runs |
+| Compute Management | `manage-compute-instance` | No cancellation |
+| SQL Management | `manage-sql-instance` | No cancellation |
+| Script Upload | `upload-vm-scripts` | No cancellation |
 
-#### Multi-Resource Changes
-1. **Create a PR** with changes affecting multiple resource types
-2. **Validation Engine** orchestrates validation in dependency order
-3. **Review comprehensive validation results** with dependency analysis
-4. **Merge the PR** if all validations pass
-5. **Deployment Engine** deploys all changes in correct order
+### Error Handling
 
-#### Template Changes
-1. **Modify common templates** in `_common/templates/`
-2. **All resources using that template** are automatically included
-3. **Engine workflows** handle comprehensive validation and deployment
-4. **Coordinated processing** across all affected resources
-
-### Manual Operations
-
-#### Compute Instance Management
-```
-Workflow: Manage Compute Instance
-├── Select Instance: dev-01/web-server-01 | dev-01/app-server-01
-├── Select Action: apply | destroy
-├── Confirm Destroy: "DESTROY" (if destroying)
-└── Execute Operation
-```
-
-#### SQL Server Management
-```
-Workflow: Manage SQL Instance
-├── Select Instance: data-staging/sql-server-01
-├── Select Action: apply | destroy
-└── Execute Operation (no confirmation needed)
+```mermaid
+flowchart TB
+    subgraph "Error Handling Strategy"
+        ERROR["Error Detected"]
+        TYPE["Error Type"]
+        
+        VALIDATION_ERR["Validation Error"]
+        TERRAFORM_ERR["Terraform Error"]
+        GCP_ERR["GCP API Error"]
+        
+        LOG["Log Error"]
+        STOP["Stop Execution"]
+        REPORT["Generate Report"]
+        NOTIFY["Notify User"]
+    end
+    
+    ERROR --> TYPE
+    TYPE --> VALIDATION_ERR --> LOG
+    TYPE --> TERRAFORM_ERR --> LOG
+    TYPE --> GCP_ERR --> LOG
+    LOG --> STOP --> REPORT --> NOTIFY
 ```
 
-#### VM Scripts Upload
+## Security Configuration
+
+### Required Secrets
+
+| Secret Name | Description | Usage |
+|------------|-------------|-------|
+| `TF_GOOGLE_CREDENTIALS` | Service account JSON key | GCP authentication |
+| `TF_SA_KEY` | Alternative SA key | Legacy workflows |
+| `GITHUB_TOKEN` | GitHub access token | Repository operations |
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant WF as Workflow
+    participant GHA as GitHub Actions
+    participant GCP as GCP
+    
+    WF->>GHA: Request Secret
+    GHA->>WF: Provide Credentials
+    WF->>GCP: Authenticate with SA
+    GCP->>WF: Grant Access
+    WF->>GCP: Execute Operations
 ```
-Workflow: Upload VM Scripts
-├── Trigger: Automatic (on script push) | Manual
-├── Check Script Changes
-├── Discover VM Scripts Buckets
-├── Upload Scripts to GCS (per VM type)
-└── Verify Uploads
-```
 
-## Workflow Security and Safety
-
-### Safety Features
-
-#### Automated Workflows
-- **Example resource filtering** prevents deployment of demonstration configurations
-- **Dependency validation** ensures proper resource ordering
-- **Failure isolation** stops execution at first failure
-- **Comprehensive logging** for audit trails
-
-#### Manual Workflows
-- **Destroy confirmation** required for compute instances
-- **Input validation** for all manual selections
-- **Concurrency protection** prevents conflicting operations
-- **Project/instance format validation** ensures correct targeting
-
-### Security Features
-- **Service account authentication** with minimal required permissions
-- **Secret management** through GitHub secrets
-- **Environment protection rules** for production deployments
-- **Audit trails** for all infrastructure operations
-
-## Monitoring and Troubleshooting
-
-### Monitoring Workflows
-
-#### GitHub Actions Interface
-- **Actions tab** shows all workflow runs with status
-- **Workflow summaries** provide high-level execution overview
-- **Step details** offer granular logging and error information
-- **Artifacts** contain plan outputs and dependency information
-
-#### Workflow-Specific Monitoring
-
-**Engine Workflows**:
-- PR comments with validation results
-- Commit comments with deployment status
-- Dependency trees and execution order visualization
-
-**Management Workflows**:
-- Instance status tracking
-- GCP Console integration links
-- Operation result summaries
+## Troubleshooting Guide
 
 ### Common Issues and Solutions
 
-#### Engine Workflow Issues
+#### 1. Workflow Not Triggering
 
-**1. Workflow Not Triggering**
-- **Cause**: Path patterns don't match changed files
-- **Solution**: Review path patterns in workflow triggers
-- **Debug**: Check git diff output matches expected patterns
+**Issue**: Workflows don't run when expected
 
-**2. Dependency Failures**
-- **Cause**: Required dependencies not available or deployed
-- **Solution**: Check dependency order and mock outputs
-- **Debug**: Review dependency validation in workflow logs
+**Solutions**:
+- Check if workflows are in `.github/workflows/` (not `.github/workflows.disabled/`)
+- Verify GitHub Actions is enabled in repository settings
+- Check branch protection rules
+- Verify file path patterns match your changes
 
-**3. Resource Detection Issues**
-- **Cause**: Changed files not detected by resource patterns
-- **Solution**: Verify resource patterns in detection logic
-- **Debug**: Examine change detection step outputs
+#### 2. Authentication Failures
 
-#### Management Workflow Issues
+**Issue**: GCP authentication errors
 
-**1. Instance Not Found**
-- **Cause**: Instance path validation failure
-- **Solution**: Verify instance exists at expected path
-- **Debug**: Check find command patterns and project matching
+**Solutions**:
+- Verify `TF_GOOGLE_CREDENTIALS` secret is set correctly
+- Check service account permissions
+- Ensure service account has required roles
+- Verify project ID is correct
 
-**2. Input Validation Failures**
-- **Cause**: Invalid project/instance format or non-existent resources
-- **Solution**: Use correct format and verify instance availability
-- **Debug**: Review validation step logs for specific errors
+#### 3. Terragrunt Errors
 
-**3. Concurrency Conflicts**
-- **Cause**: Multiple workflows targeting same resource
-- **Solution**: Wait for running workflows to complete
-- **Debug**: Check workflow run queue and concurrency groups
+**Issue**: Terragrunt plan or apply failures
 
-#### VM Scripts Upload Issues
+**Solutions**:
+- Check for dependency cycles
+- Verify all required inputs are provided
+- Check for state lock conflicts
+- Review Terragrunt version compatibility
 
-**1. Scripts Not Uploading**
-- **Cause**: No script changes detected in push event
-- **Solution**: Use manual trigger with force upload option
-- **Debug**: Check workflow summary for detection results
+#### 4. Resource Order Issues
 
-**2. Bucket Not Found**
-- **Cause**: VM scripts bucket doesn't exist in target project
-- **Solution**: Ensure vm-scripts bucket is deployed first
-- **Debug**: Check bucket discovery logs in workflow
+**Issue**: Resources deployed in wrong order
 
-**3. Upload Failures**
-- **Cause**: Permission issues or network problems
-- **Solution**: Verify service account has storage permissions
-- **Debug**: Check gsutil error messages in upload step
+**Solutions**:
+- Review dependency declarations in terragrunt.hcl
+- Check execution order in workflow
+- Verify mock outputs for dependencies
+- Use manual workflows for specific resources
 
-### Debugging Workflows
+#### 5. Parallel Execution Failures
 
-#### Enable Debug Logging
-```yaml
-env:
-  TOFU_LOG: DEBUG
-  ACTIONS_STEP_DEBUG: true
-  ACTIONS_RUNNER_DEBUG: true
-```
+**Issue**: Parallel steps interfering with each other
 
-#### Local Testing
+**Solutions**:
+- Check for resource name conflicts
+- Verify unique state paths
+- Review GCP quota limits
+- Consider sequential execution for problematic resources
+
+### Debug Commands
+
 ```bash
-# Install act for local workflow testing
-curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+# Check workflow syntax
+act --list
 
-# Test validation workflow locally
-act pull_request --workflows .github/workflows/terragrunt-pr-engine.yml
+# Test workflow locally (requires act tool)
+act -j job-name
 
-# Test manual workflow locally
-act workflow_dispatch --workflows .github/workflows/manage-compute-instance.yml
+# Validate Terragrunt configuration
+terragrunt validate
+
+# Check dependency graph
+terragrunt graph-dependencies
+
+# View state lock status
+terragrunt state list
 ```
-
-## Configuration
-
-### Required GitHub Secrets
-
-| Secret | Description | Used By |
-|--------|-------------|---------|
-| `TF_GOOGLE_CREDENTIALS` | GCP service account credentials | All workflows |
-| `GCP_SA_KEY` | GCP service account key for VM scripts | Upload VM Scripts workflow |
-
-### Environment Configuration
-
-Environment variables are centrally managed through `common-env.yml`:
-
-```yaml
-# Core versions
-TERRAGRUNT_VERSION: "0.80.2"
-TOFU_VERSION: "1.9.1"
-
-# GCP configuration
-GCP_PROJECT_ID: "org-test-dev"
-GCP_REGION: "europe-west2"
-
-# Terragrunt configuration
-TG_EXPERIMENT_MODE: "true"
-TG_NON_INTERACTIVE: "true"
-TG_BACKEND_BOOTSTRAP: "false"
-```
-
-### Customization
-
-#### Adding New Resource Types
-1. **Update engine workflows** with new resource patterns
-2. **Add resource detection logic** in change detection
-3. **Create reusable templates** if needed
-4. **Update dependency order** if required
-
-#### Modifying Manual Workflows
-1. **Add new instance options** to workflow inputs
-2. **Update validation logic** for new instances
-3. **Modify path detection** patterns as needed
-4. **Update help text** and error messages
-
-#### Adjusting Execution Order
-1. **Modify dependency conditions** in engine workflows
-2. **Update step organization** for clarity
-3. **Adjust parallel execution** groups as needed
-4. **Test with multi-resource changes**
 
 ## Best Practices
 
-### Infrastructure Development
-1. **Test changes in feature branches** before merging
-2. **Use small, focused changes** when possible
-3. **Review plan outputs** carefully in PR validation
-4. **Monitor deployments** through workflow summaries
+### 1. Workflow Usage
 
-### Manual Operations
-1. **Use manual workflows** for one-off operations only
-2. **Verify instance selection** before executing
-3. **Monitor execution progress** through workflow logs
-4. **Check GCP Console** to verify results
+- **Use PR validation** for all infrastructure changes
+- **Never bypass** the PR process for production changes
+- **Use manual workflows** for emergency operations
+- **Monitor workflow runs** for failures
+- **Review logs** for detailed error information
 
-### Workflow Maintenance
-1. **Keep reusable workflows** up to date
-2. **Monitor for deprecated** GitHub Actions features
-3. **Update environment versions** regularly
-4. **Review and clean up** old workflow runs and artifacts
+### 2. Resource Management
 
-### Security
-1. **Rotate service account keys** regularly
-2. **Review workflow permissions** periodically
-3. **Monitor for sensitive data** in workflow logs
-4. **Use environment protection rules** for critical resources
+- **Follow naming conventions** for resources
+- **Use appropriate resource types** from templates
+- **Declare dependencies** explicitly
+- **Test in development** before production
+- **Document custom configurations**
 
-## References
+### 3. Security
 
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [Reusable Workflows](https://docs.github.com/en/actions/using-workflows/reusing-workflows)
-- [Workflow Security](https://docs.github.com/en/actions/security-guides)
-- [Environment Protection Rules](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
-- [Terragrunt CLI Documentation](https://terragrunt.gruntwork.io/docs/reference/cli-options/)
-- [OpenTofu Documentation](https://opentofu.org/docs/)
+- **Rotate service account keys** regularly
+- **Use least privilege** for service accounts
+- **Never commit secrets** to repository
+- **Review workflow permissions** periodically
+- **Audit workflow executions**
+
+### 4. Performance
+
+- **Use binary caching** to speed up workflows
+- **Leverage parallel execution** where possible
+- **Minimize unnecessary validations**
+- **Clean up old workflow runs**
+- **Monitor workflow duration trends**
+
+## Migration Guide
+
+### Enabling Workflows
+
+To enable the workflows from their disabled state:
+
+1. **Move workflow files**:
+   ```bash
+   mv .github/workflows.disabled/* .github/workflows/
+   ```
+
+2. **Configure secrets** in GitHub repository settings:
+   - Add `TF_GOOGLE_CREDENTIALS` with service account JSON
+   - Ensure `GITHUB_TOKEN` is available
+
+3. **Update branch protection**:
+   - Require PR reviews
+   - Require status checks to pass
+   - Include validation workflow as required check
+
+4. **Test with non-production**:
+   - Start with development environment
+   - Verify workflows trigger correctly
+   - Check execution logs
+
+5. **Roll out gradually**:
+   - Enable for specific resource types first
+   - Monitor for issues
+   - Expand coverage progressively
+
+### Customization Options
+
+#### Modify Execution Order
+
+Edit the execution order in engine workflows:
+```yaml
+# In terragrunt-apply-engine.yml
+EXECUTION_ORDER: ["folder", "project", "vpc-network", ...]
+```
+
+#### Add New Resource Types
+
+1. Create template in `_common/templates/`
+2. Add pattern to `RESOURCE_PATTERNS` in workflows
+3. Update execution order if needed
+4. Test with PR validation
+
+#### Customize Environments
+
+Modify `common-env.yml` defaults:
+```yaml
+TERRAGRUNT_VERSION: "0.99.x"  # Update version
+TOFU_VERSION: "1.11.x"        # Update version
+GCP_REGION: "us-central1"     # Change region
+```
+
+## Monitoring and Metrics
+
+### Workflow Metrics to Track
+
+- **Execution Duration**: Average time per workflow
+- **Success Rate**: Percentage of successful runs
+- **Failure Patterns**: Common failure points
+- **Resource Coverage**: Resources managed by workflows
+- **Manual Interventions**: Frequency of manual workflow usage
+
+### GitHub Actions Dashboard
+
+Monitor workflows through:
+- Repository Actions tab
+- Workflow run history
+- Job execution details
+- Artifact downloads
+- Log analysis
+
+## Appendix
+
+### Workflow File Reference
+
+| File | Type | Purpose |
+|------|------|---------|
+| `common-env.yml` | Reusable | Shared environment configuration |
+| `terragrunt-pr-engine.yml` | Engine | PR validation |
+| `terragrunt-apply-engine.yml` | Engine | Deployment automation |
+| `manage-compute-instance.yml` | Manual | VM management |
+| `manage-sql-instance.yml` | Manual | SQL VM management |
+| `manage-gke-cluster.yml` | Manual | GKE cluster operations |
+| `upload-vm-scripts.yml` | Auto/Manual | Script synchronization |
+
+### Resource Type Matrix
+
+| Resource | Create | Update | Delete | Dependencies |
+|----------|--------|--------|--------|--------------|
+| Folder | ✅ | ✅ | ✅ | None |
+| Project | ✅ | ✅ | ✅ | Folder |
+| VPC Network | ✅ | ✅ | ✅ | Project |
+| External IP | ✅ | ✅ | ✅ | Project |
+| Cloud Router | ✅ | ✅ | ✅ | VPC Network |
+| Cloud NAT | ✅ | ✅ | ✅ | Cloud Router |
+| Firewall Rules | ✅ | ✅ | ✅ | VPC Network |
+| Private Service Access | ✅ | ✅ | ✅ | VPC Network |
+| Buckets | ✅ | ✅ | ✅ | Project |
+| Secrets | ✅ | ✅ | ✅ | Project |
+| BigQuery | ✅ | ✅ | ✅ | Project |
+| Cloud SQL | ✅ | ✅ | ✅ | Private Service Access |
+| Instance Templates | ✅ | ✅ | ✅ | VPC Network |
+| Compute Instances | ✅ | ✅ | ✅ | Instance Templates |
+| GKE Clusters | ✅ | ✅ | ✅ | VPC Network, External IP |
+| IAM Bindings | ✅ | ✅ | ✅ | Parent Resource |
+
+### Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | Initial | Original workflow system |
+| 1.1.0 | Current | Added GKE management, NAT gateway support, enhanced IAM bindings |
+
+---
+
+*Last Updated: 2025-08-30*
+*Workflows Status: Disabled (in `.github/workflows.disabled/`)*

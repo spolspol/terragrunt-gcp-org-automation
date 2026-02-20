@@ -51,7 +51,7 @@ flowchart TB
         end
         
         subgraph ENVS["Environments (/16 each)"]
-            DEV01["dev-01<br/>10.132.0.0/16<br/>65,536 IPs"]
+            DEV01["dp-dev-01<br/>10.132.0.0/16<br/>65,536 IPs"]
             DEV02["dev-02<br/>10.133.0.0/16<br/>Reserved"]
             MORE["...64 total"]
         end
@@ -108,7 +108,7 @@ Each GKE cluster requires secondary ranges for pods and services:
 flowchart LR
     subgraph "Development Block (10.128.0.0/10)"
         subgraph ACTIVE["Active Environments"]
-            DEV01["dev-01<br/>10.132.0.0/16<br/>✅ Deployed"]
+            DEV01["dp-dev-01<br/>10.132.0.0/16<br/>✅ Deployed"]
         end
         
         subgraph RESERVED["Reserved"]
@@ -135,23 +135,23 @@ flowchart LR
 **Range**: 10.128.0.0 - 10.191.255.255  
 **Capacity**: 64 environments × 65,536 IPs
 
-#### Active Environment: dev-01
+#### Active Environment: dp-dev-01
 
 ```mermaid
 sankey-beta
 
-%% dev-01 IP Allocation (10.132.0.0/16)
-dev-01,DMZ,2048
-dev-01,Private,2048
-dev-01,Public,2048
-dev-01,GKE-Primary,16384
-dev-01,GKE-Pods,2048
-dev-01,GKE-Services,256
-dev-01,Reserved,8960
-dev-01,Available,31744
+%% dp-dev-01 IP Allocation (10.132.0.0/16)
+dp-dev-01,DMZ,2048
+dp-dev-01,Private,2048
+dp-dev-01,Public,2048
+dp-dev-01,GKE-Primary,16384
+dp-dev-01,GKE-Pods,2048
+dp-dev-01,GKE-Services,256
+dp-dev-01,Reserved,8960
+dp-dev-01,Available,31744
 ```
 
-**dev-01**: 10.132.0.0/16
+**dp-dev-01**: 10.132.0.0/16
 - Status: ✅ Active
 - Utilization: 51.6% (33,792 IPs allocated)
 - Available: 48.4% (31,744 IPs)
@@ -251,7 +251,7 @@ metadata:
 development:
   block: "10.128.0.0/10"
   environments:
-    dev-01:
+    dp-dev-01:
       block: "10.132.0.0/16"
       primary_subnets:
         dmz:
@@ -305,7 +305,7 @@ python3 ip-allocation-checker.py visualize
 python3 ip-allocation-checker.py available
 
 # Suggest next cluster allocation
-python3 ip-allocation-checker.py next dev-01
+python3 ip-allocation-checker.py next dp-dev-01
 ```
 
 #### Automated Validation
@@ -379,7 +379,7 @@ Current capacity and growth potential:
 - dev-06: 10.137.0.0/16
 - dev-07: 10.138.0.0/16
 
-#### GKE Clusters (dev-01)
+#### GKE Clusters (dp-dev-01)
 - cluster-02: Already reserved
 - cluster-03: Already reserved
 - cluster-04: Already reserved
@@ -465,7 +465,7 @@ flowchart LR
 flowchart TB
     subgraph "External IP Management"
         subgraph NAT["NAT Gateway IPs"]
-            NAT1["dev-01-nat<br/>35.246.0.1"]
+            NAT1["dp-dev-01-nat<br/>35.246.0.1"]
         end
         
         subgraph CLUSTER["Cluster Service IPs"]
@@ -492,7 +492,7 @@ External IPs for NAT gateways are managed separately:
 ```yaml
 external_ips:
   nat_gateways:
-    - name: "dev-01-nat-gateway"
+    - name: "dp-dev-01-nat-gateway"
       ip: "35.246.0.1"
       region: "europe-west2"
 ```
@@ -503,7 +503,7 @@ Each GKE cluster requires external IPs for ingress:
 
 ```yaml
 cluster_services:
-  - name: "dev-01-cluster-01-services"
+  - name: "dp-dev-01-cluster-01-services"
     ip: "35.246.0.123"
     purpose: "Ingress controller"
 ```
@@ -514,7 +514,7 @@ Database servers may require external IPs:
 
 ```yaml
 sql_servers:
-  - name: "dev-01-sql-server-01"
+  - name: "dp-dev-01-sql-server-01"
     ip: "35.246.0.200"
     purpose: "SQL Server access"
 ```

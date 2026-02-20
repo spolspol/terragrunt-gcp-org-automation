@@ -19,7 +19,7 @@ Secrets are organized in the following structure:
 live/
 └── non-production/
     └── development/
-        └── dev-01/
+        └── dp-dev-01/
             └── secrets/
                 ├── api-secret/
                 │   └── terragrunt.hcl
@@ -79,7 +79,7 @@ export SERVICE_ACCOUNT_KEY=$(cat /path/to/service-account-key.json)
 
 ```bash
 # Navigate to each secret directory and deploy
-cd live/non-production/development/dev-01/secrets/api-secret
+cd live/non-production/development/dp-dev-01/secrets/api-secret
 terragrunt apply
 
 cd ../api-key-secret
@@ -92,7 +92,7 @@ terragrunt apply
 ### Deploy All Secrets at Once
 
 ```bash
-cd live/non-production/development/dev-01/secrets
+cd live/non-production/development/dp-dev-01/secrets
 terragrunt run-all apply
 ```
 

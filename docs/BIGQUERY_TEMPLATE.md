@@ -43,8 +43,18 @@ The BigQuery template (`_common/templates/bigquery.hcl`) provides a standardized
 ### Basic Implementation
 
 ```hcl
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "bigquery_template" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/bigquery.hcl"
+  path           = "${get_repo_root()}/_common/templates/bigquery.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "project" {
@@ -55,42 +65,28 @@ dependency "project" {
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
 }
 
-locals {
-  merged_vars = merge(
-    read_terragrunt_config(find_in_parent_folders("account.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("env.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("project.hcl")).locals,
-    read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals
+inputs = {
+  dataset_id   = replace("${include.base.locals.merged.name_prefix}_analytics_${include.base.locals.environment}", "-", "_")
+  dataset_name = "Analytics Dataset"
+  project_id   = dependency.project.outputs.project_id
+  location     = include.base.locals.region
+
+  tables = [
+    {
+      table_id = "example_table"
+      schema   = "[]"
+      labels   = { env = include.base.locals.environment }
+    }
+  ]
+
+  dataset_labels = merge(
+    {
+      component   = "bigquery"
+      environment = include.base.locals.environment
+    },
+    include.base.locals.standard_labels
   )
 }
-
-inputs = merge(
-  read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/bigquery.hcl").inputs,
-  {
-    dataset_id   = replace("${local.merged_vars.name_prefix}_analytics_${local.merged_vars.environment}", "-", "_")
-    dataset_name = "Analytics Dataset"
-    project_id   = dependency.project.outputs.project_id
-    location     = local.merged_vars.region
-    
-    tables = [
-      {
-        table_id = "example_table"
-        schema   = "[]"
-        labels   = { env = local.merged_vars.environment }
-      }
-    ]
-    
-    dataset_labels = merge(
-      {
-        component = "bigquery"
-        environment = local.merged_vars.environment
-      },
-      local.merged_vars.org_labels,
-      local.merged_vars.env_labels,
-      local.merged_vars.project_labels
-    )
-  }
-)
 ```
 
 ### Advanced Usage

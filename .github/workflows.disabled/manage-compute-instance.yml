@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       vm_instance:
-        description: 'Compute instance to manage (project/instance format)'
+        description: "Compute instance to manage (project/instance format)"
         required: true
         type: choice
         options:
           # Example project VMs
-          - web-project/web-server-01
-          - org-dev-01/app-server-01
+          - dp-dev-01/linux-vm
+          - dp-dev-01/sql-server-01
       action:
-        description: 'Action to perform on the compute instance'
+        description: "Action to perform on the compute instance"
         required: true
         type: choice
         options:
@@ -23,7 +23,10 @@ on:
         description: 'Type "DESTROY" to confirm destructive action (required for destroy operations)'
         required: false
         type: string
-        default: ''
+        default: ""
+
+permissions:
+  contents: read
 
 concurrency:
   group: manage-compute-instance
@@ -31,11 +34,11 @@ concurrency:
 
 jobs:
   get-env:
-    name: 📋 Get ENV
+    name: Get ENV
     uses: ./.github/workflows/common-env.yml
 
   validate-inputs:
-    name: 🔍 Validate Inputs
+    name: Validate Inputs
     runs-on: ubuntu-latest
     outputs:
       instance-path: ${{ steps.validate.outputs.instance-path }}
@@ -53,14 +56,14 @@ jobs:
           ACTION="${{ inputs.action }}"
           CONFIRM_DESTROY="${{ inputs.confirm_destroy }}"
 
-          echo "🔍 Validating inputs..."
+          echo "Validating inputs..."
           echo "VM instance: $VM_INSTANCE"
           echo "Action: $ACTION"
 
           # Parse project and instance name from project/instance format
           if ! echo "$VM_INSTANCE" | grep -q "/"; then
-            echo "❌ Invalid VM instance format. Expected 'project/instance-name' format."
-            echo "Valid formats: web-project/web-server-01, org-dev-01/app-server-01"
+            echo "Error: Invalid VM instance format. Expected 'project/instance-name' format."
+            echo "Valid formats: dp-dev-01/linux-vm, dp-dev-01/sql-server-01"
             exit 1
           fi
 
@@ -72,52 +75,40 @@ jobs:
 
           # Validate project and instance format
           if ! echo "$PROJECT" | grep -E "^[a-z0-9-]+$" > /dev/null; then
-            echo "❌ Invalid project name format. Use lowercase letters, numbers, and hyphens only."
+            echo "Error: Invalid project name format. Use lowercase letters, numbers, and hyphens only."
             exit 1
           fi
 
           if ! echo "$INSTANCE_NAME" | grep -E "^[a-z0-9-]+$" > /dev/null; then
-            echo "❌ Invalid instance name format. Use lowercase letters, numbers, and hyphens only."
+            echo "Error: Invalid instance name format. Use lowercase letters, numbers, and hyphens only."
             exit 1
           fi
 
           # Validate project and instance combination
           case "$PROJECT" in
-            "web-project")
+            "dp-dev-01")
               case "$INSTANCE_NAME" in
-                "web-server-01")
-                  echo "✅ Valid instance '$INSTANCE_NAME' for project '$PROJECT'"
+                "linux-vm"|"sql-server-01")
+                  echo "Valid instance '$INSTANCE_NAME' for project '$PROJECT'"
                   ;;
                 *)
-                  echo "❌ Instance '$INSTANCE_NAME' does not exist in project '$PROJECT'"
-                  echo "Valid instances for $PROJECT: web-server-01"
-                  exit 1
-                  ;;
-              esac
-              ;;
-            "org-dev-01")
-              case "$INSTANCE_NAME" in
-                "app-server-01"|"sql-server-01")
-                  echo "✅ Valid instance '$INSTANCE_NAME' for project '$PROJECT'"
-                  ;;
-                *)
-                  echo "❌ Instance '$INSTANCE_NAME' does not exist in project '$PROJECT'"
-                  echo "Valid instances for $PROJECT: app-server-01, sql-server-01"
+                  echo "Error: Instance '$INSTANCE_NAME' does not exist in project '$PROJECT'"
+                  echo "Valid instances for $PROJECT: linux-vm, sql-server-01"
                   exit 1
                   ;;
               esac
               ;;
             *)
-              echo "❌ Unknown project: $PROJECT"
-              echo "Available projects: web-project, org-dev-01"
+              echo "Error: Unknown project: $PROJECT"
+              echo "Available projects: dp-dev-01"
               exit 1
               ;;
           esac
 
-          echo "✅ Project and instance combination validated"
+          echo "Project and instance combination validated"
 
           # Find the instance path
-          echo "🔍 Searching for compute instance: $INSTANCE_NAME in project: $PROJECT"
+          echo "Searching for compute instance: $INSTANCE_NAME in project: $PROJECT"
 
           # Search for the instance path in the live directory structure
           INSTANCE_PATH=""
@@ -128,17 +119,16 @@ jobs:
               # Verify the path contains the correct project
               if echo "$path" | grep -q "/$PROJECT/"; then
                 INSTANCE_PATH="$path"
-                echo "✅ Found instance at: $INSTANCE_PATH"
+                echo "Found instance at: $INSTANCE_PATH"
                 break
               fi
             fi
           done
 
           if [ -z "$INSTANCE_PATH" ]; then
-            echo "❌ Compute instance '$INSTANCE_NAME' not found in project '$PROJECT'"
+            echo "Error: Compute instance '$INSTANCE_NAME' not found in project '$PROJECT'"
             echo "Available instances by project:"
-            echo "  web-project: web-server-01"
-            echo "  org-dev-01: app-server-01, sql-server-01"
+            echo "  dp-dev-01: linux-vm, sql-server-01"
             exit 1
           fi
 
@@ -146,14 +136,14 @@ jobs:
           ACTION_CONFIRMED="false"
           if [ "$ACTION" == "destroy" ]; then
             if [ "$CONFIRM_DESTROY" != "DESTROY" ]; then
-              echo "❌ Destroy action requires confirmation. Please enter 'DESTROY' in the confirm_destroy field."
+              echo "Error: Destroy action requires confirmation. Please enter 'DESTROY' in the confirm_destroy field."
               exit 1
             fi
             ACTION_CONFIRMED="true"
-            echo "⚠️ DESTROY action confirmed for VM: $INSTANCE_NAME in project: $PROJECT"
+            echo "DESTROY action confirmed for VM: $INSTANCE_NAME in project: $PROJECT"
           else
             ACTION_CONFIRMED="true"
-            echo "✅ DEPLOY action confirmed for VM: $INSTANCE_NAME in project: $PROJECT"
+            echo "DEPLOY action confirmed for VM: $INSTANCE_NAME in project: $PROJECT"
           fi
 
           # Set outputs
@@ -162,10 +152,10 @@ jobs:
           echo "project-name=$PROJECT" >> $GITHUB_OUTPUT
           echo "action-confirmed=$ACTION_CONFIRMED" >> $GITHUB_OUTPUT
 
-          echo "✅ Input validation completed successfully"
+          echo "Input validation completed successfully"
 
   execute-action:
-    name: "${{ inputs.action == 'destroy' && '🗑️' || '🚀' }} ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }}: ${{ needs.validate-inputs.outputs.instance-display-name }} (${{ needs.validate-inputs.outputs.project-name }})"
+    name: "${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }}: ${{ needs.validate-inputs.outputs.instance-display-name }} (${{ needs.validate-inputs.outputs.project-name }})"
     runs-on: ubuntu-latest
     needs: [get-env, validate-inputs]
     env:
@@ -200,19 +190,19 @@ jobs:
           mkdir -p ~/.local/bin
 
           # Install Terragrunt
-          echo "📥 Downloading Terragrunt v${{ env.TERRAGRUNT_VERSION }}..."
+          echo "Downloading Terragrunt v${{ env.TERRAGRUNT_VERSION }}..."
           wget -O ~/.local/bin/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v${{ env.TERRAGRUNT_VERSION }}/terragrunt_linux_amd64
           chmod +x ~/.local/bin/terragrunt
 
           # Install OpenTofu
-          echo "📥 Downloading OpenTofu v${{ env.TOFU_VERSION }}..."
+          echo "Downloading OpenTofu v${{ env.TOFU_VERSION }}..."
           wget -O tofu.tar.gz https://github.com/opentofu/opentofu/releases/download/v${{ env.TOFU_VERSION }}/tofu_${{ env.TOFU_VERSION }}_linux_amd64.tar.gz
           tar -xzf tofu.tar.gz
           chmod +x tofu
           mv tofu ~/.local/bin/
           rm tofu.tar.gz
 
-          echo "✅ Binaries downloaded and cached"
+          echo "Binaries downloaded and cached"
 
       - name: Add binaries to PATH and verify
         run: |
@@ -221,10 +211,10 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
 
           # Verify installations
-          echo "🔍 Verifying installations..."
+          echo "Verifying installations..."
           terragrunt --version
           tofu --version
-          echo "✅ All binaries verified"
+          echo "All binaries verified"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -234,38 +224,38 @@ jobs:
       - name: Pre-execution validation
         working-directory: ${{ needs.validate-inputs.outputs.instance-path }}
         run: |
-          echo "🔍 Pre-execution validation for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+          echo "Pre-execution validation for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
           echo "Working directory: ${{ needs.validate-inputs.outputs.instance-path }}"
           echo "Action: ${{ inputs.action }}"
 
           # Verify terragrunt.hcl exists
           if [ ! -f "terragrunt.hcl" ]; then
-            echo "❌ terragrunt.hcl not found in current directory"
+            echo "Error: terragrunt.hcl not found in current directory"
             exit 1
           fi
 
           # Show configuration summary
-          echo "📋 Configuration file found:"
+          echo "Configuration file found:"
           ls -la terragrunt.hcl
 
           # Validate HCL syntax
-          echo "🔍 Validating HCL configuration..."
+          echo "Validating HCL configuration..."
           terragrunt hcl validate
 
-          echo "✅ Pre-execution validation completed"
+          echo "Pre-execution validation completed"
 
       - name: Initialize Terragrunt
         working-directory: ${{ needs.validate-inputs.outputs.instance-path }}
         run: |
-          echo "🔧 Initializing Terragrunt for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+          echo "Initializing Terragrunt for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
           terragrunt run init
-          echo "✅ Terragrunt initialization completed"
+          echo "Terragrunt initialization completed"
 
       - name: "${{ inputs.action == 'destroy' && 'Plan Destroy' || 'Plan Deploy' }}"
         id: plan
         working-directory: ${{ needs.validate-inputs.outputs.instance-path }}
         run: |
-          echo "📋 Planning ${{ inputs.action }} for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+          echo "Planning ${{ inputs.action }} for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
 
           # Prepare plan file name
           export PLAN_TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
@@ -275,10 +265,10 @@ jobs:
 
           set +e
           if [ "${{ inputs.action }}" == "destroy" ]; then
-            echo "🗑️ Planning destroy operation..."
+            echo "Planning destroy operation..."
             terragrunt run plan -- -destroy -detailed-exitcode -compact-warnings -no-color | tee "$PLAN_FILE_NAME"
           else
-            echo "🚀 Planning deploy operation..."
+            echo "Planning deploy operation..."
             terragrunt run plan -- -detailed-exitcode -compact-warnings -no-color | tee "$PLAN_FILE_NAME"
           fi
 
@@ -291,20 +281,20 @@ jobs:
           echo "Plan output file size: $(wc -l < "$PLAN_FILE_NAME" 2>/dev/null || echo 0) lines"
 
           # Show plan summary
-          echo "📋 Plan Summary (first 20 lines):"
+          echo "Plan Summary (first 20 lines):"
           head -20 "$PLAN_FILE_NAME" || echo "Could not read plan output"
-          echo "📋 Plan Summary (last 20 lines):"
+          echo "Plan Summary (last 20 lines):"
           tail -20 "$PLAN_FILE_NAME" || echo "Could not read plan output"
 
           if [ $PLAN_EXIT_CODE -eq 0 ]; then
             echo "result=no-changes" >> $GITHUB_OUTPUT
-            echo "✅ No changes detected"
+            echo "No changes detected"
           elif [ $PLAN_EXIT_CODE -eq 2 ]; then
             echo "result=changes-detected" >> $GITHUB_OUTPUT
-            echo "✅ Changes detected - ready for execution"
+            echo "Changes detected - ready for execution"
           else
             echo "result=error" >> $GITHUB_OUTPUT
-            echo "❌ Terragrunt plan failed with exit code: $PLAN_EXIT_CODE"
+            echo "Terragrunt plan failed with exit code: $PLAN_EXIT_CODE"
             exit 1
           fi
 
@@ -313,15 +303,15 @@ jobs:
         working-directory: ${{ needs.validate-inputs.outputs.instance-path }}
         if: steps.plan.outputs.result == 'changes-detected'
         run: |
-          echo "${{ inputs.action == 'destroy' && '🗑️ Executing DESTROY' || '🚀 Executing DEPLOY' }} for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+          echo "${{ inputs.action == 'destroy' && 'Executing DESTROY' || 'Executing DEPLOY' }} for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
 
           set +e
           if [ "${{ inputs.action }}" == "destroy" ]; then
-            echo "⚠️ WARNING: About to destroy compute instance: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
-            echo "⚠️ This action is IRREVERSIBLE and will permanently delete the instance"
+            echo "WARNING: About to destroy compute instance: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+            echo "This action is IRREVERSIBLE and will permanently delete the instance"
             terragrunt run destroy -- -auto-approve
           else
-            echo "🚀 Deploying configuration for compute instance: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+            echo "Deploying configuration for compute instance: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
             terragrunt run apply -- -auto-approve
           fi
 
@@ -329,10 +319,10 @@ jobs:
           set -e
 
           if [ $ACTION_EXIT_CODE -eq 0 ]; then
-            echo "✅ ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} completed successfully for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+            echo "${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} completed successfully for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
             echo "result=success" >> $GITHUB_OUTPUT
           else
-            echo "❌ ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} failed with exit code: $ACTION_EXIT_CODE for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+            echo "${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} failed with exit code: $ACTION_EXIT_CODE for: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
             echo "result=error" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -340,7 +330,7 @@ jobs:
       - name: Show No Changes Message
         if: steps.plan.outputs.result == 'no-changes'
         run: |
-          echo "ℹ️ No changes detected for compute instance: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
+          echo "No changes detected for compute instance: ${{ needs.validate-inputs.outputs.instance-display-name }} in project: ${{ needs.validate-inputs.outputs.project-name }}"
           echo "The current state matches the desired configuration."
           if [ "${{ inputs.action }}" == "destroy" ]; then
             echo "The instance may already be destroyed or not exist."
@@ -349,7 +339,7 @@ jobs:
           fi
 
   summary:
-    name: 📊 Execution Summary
+    name: Execution Summary
     runs-on: ubuntu-latest
     needs: [validate-inputs, execute-action]
     if: always()
@@ -362,24 +352,24 @@ jobs:
           VM_NAME="${{ needs.validate-inputs.outputs.instance-display-name }}"
           ACTION="${{ inputs.action }}"
 
-          echo "## 🎯 Compute Instance Management Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Compute Instance Management Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Determine overall status
           if [ "$VALIDATION_STATUS" == "success" ] && [ "$EXECUTION_STATUS" == "success" ]; then
-            echo "🟢 **Status: SUCCESS** ✅" >> $GITHUB_STEP_SUMMARY
+            echo "**Status: SUCCESS**" >> $GITHUB_STEP_SUMMARY
             OVERALL_STATUS="success"
           elif [ "$VALIDATION_STATUS" == "failure" ]; then
-            echo "🔴 **Status: VALIDATION FAILED** ❌" >> $GITHUB_STEP_SUMMARY
+            echo "**Status: VALIDATION FAILED**" >> $GITHUB_STEP_SUMMARY
             OVERALL_STATUS="validation_failed"
           elif [ "$EXECUTION_STATUS" == "failure" ]; then
-            echo "🔴 **Status: EXECUTION FAILED** ❌" >> $GITHUB_STEP_SUMMARY
+            echo "**Status: EXECUTION FAILED**" >> $GITHUB_STEP_SUMMARY
             OVERALL_STATUS="execution_failed"
           elif [ "$EXECUTION_STATUS" == "skipped" ]; then
-            echo "🟡 **Status: NO CHANGES** ℹ️" >> $GITHUB_STEP_SUMMARY
+            echo "**Status: NO CHANGES**" >> $GITHUB_STEP_SUMMARY
             OVERALL_STATUS="no_changes"
           else
-            echo "🟡 **Status: UNKNOWN** ❓" >> $GITHUB_STEP_SUMMARY
+            echo "**Status: UNKNOWN**" >> $GITHUB_STEP_SUMMARY
             OVERALL_STATUS="unknown"
           fi
 
@@ -392,26 +382,26 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Show step results
-          echo "### 📋 Step Results:" >> $GITHUB_STEP_SUMMARY
+          echo "### Step Results:" >> $GITHUB_STEP_SUMMARY
           echo "| Step | Status | Result |" >> $GITHUB_STEP_SUMMARY
           echo "|------|--------|--------|" >> $GITHUB_STEP_SUMMARY
 
           # Validation step
           if [ "$VALIDATION_STATUS" == "success" ]; then
-            echo "| 🔍 Input Validation | ✅ PASSED | Instance found and validated |" >> $GITHUB_STEP_SUMMARY
+            echo "| Input Validation | PASSED | Instance found and validated |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| 🔍 Input Validation | ❌ FAILED | Invalid inputs or instance not found |" >> $GITHUB_STEP_SUMMARY
+            echo "| Input Validation | FAILED | Invalid inputs or instance not found |" >> $GITHUB_STEP_SUMMARY
           fi
 
           # Execution step
           if [ "$EXECUTION_STATUS" == "success" ]; then
-            echo "| ${{ inputs.action == 'destroy' && '🗑️' || '🚀' }} ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | ✅ COMPLETED | Infrastructure ${{ inputs.action }}ed successfully |" >> $GITHUB_STEP_SUMMARY
+            echo "| ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | COMPLETED | Infrastructure ${{ inputs.action }}ed successfully |" >> $GITHUB_STEP_SUMMARY
           elif [ "$EXECUTION_STATUS" == "failure" ]; then
-            echo "| ${{ inputs.action == 'destroy' && '🗑️' || '🚀' }} ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | ❌ FAILED | Execution encountered errors |" >> $GITHUB_STEP_SUMMARY
+            echo "| ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | FAILED | Execution encountered errors |" >> $GITHUB_STEP_SUMMARY
           elif [ "$EXECUTION_STATUS" == "skipped" ]; then
-            echo "| ${{ inputs.action == 'destroy' && '🗑️' || '🚀' }} ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | ⏸️ SKIPPED | No changes detected |" >> $GITHUB_STEP_SUMMARY
+            echo "| ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | SKIPPED | No changes detected |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| ${{ inputs.action == 'destroy' && '🗑️' || '🚀' }} ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | ❓ UNKNOWN | Unexpected status |" >> $GITHUB_STEP_SUMMARY
+            echo "| ${{ inputs.action == 'destroy' && 'Destroy' || 'Deploy' }} Execution | UNKNOWN | Unexpected status |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -419,35 +409,35 @@ jobs:
           # Show appropriate next steps based on status
           case "$OVERALL_STATUS" in
             "success")
-              echo "### ✅ Success - Next Steps:" >> $GITHUB_STEP_SUMMARY
+              echo "### Success - Next Steps:" >> $GITHUB_STEP_SUMMARY
               if [ "$ACTION" == "destroy" ]; then
-                echo "- **🗑️ Instance destroyed** - The compute instance has been permanently removed" >> $GITHUB_STEP_SUMMARY
-                echo "- **🔍 Verify in GCP Console** - Confirm the instance no longer appears in Compute Engine" >> $GITHUB_STEP_SUMMARY
-                echo "- **💰 Cost savings** - Billing for this instance has stopped" >> $GITHUB_STEP_SUMMARY
+                echo "- **Instance destroyed** - The compute instance has been permanently removed" >> $GITHUB_STEP_SUMMARY
+                echo "- **Verify in GCP Console** - Confirm the instance no longer appears in Compute Engine" >> $GITHUB_STEP_SUMMARY
+                echo "- **Cost savings** - Billing for this instance has stopped" >> $GITHUB_STEP_SUMMARY
               else
-                echo "- **🚀 Instance deployed** - The compute instance is now running" >> $GITHUB_STEP_SUMMARY
-                echo "- **🔍 Verify in GCP Console** - Check the instance status in Compute Engine" >> $GITHUB_STEP_SUMMARY
-                echo "- **🌐 Connect to instance** - Use SSH or RDP to access the instance if needed" >> $GITHUB_STEP_SUMMARY
+                echo "- **Instance deployed** - The compute instance is now running" >> $GITHUB_STEP_SUMMARY
+                echo "- **Verify in GCP Console** - Check the instance status in Compute Engine" >> $GITHUB_STEP_SUMMARY
+                echo "- **Connect to instance** - Use SSH or RDP to access the instance if needed" >> $GITHUB_STEP_SUMMARY
               fi
               ;;
             "validation_failed")
-              echo "### ❌ Validation Failed - Next Steps:" >> $GITHUB_STEP_SUMMARY
-              echo "- **🔍 Check instance name** - Ensure the instance name exists in the repository" >> $GITHUB_STEP_SUMMARY
-              echo "- **📋 Available instances** - Review the validation logs for available instance names" >> $GITHUB_STEP_SUMMARY
-              echo "- **🔧 Fix input errors** - Correct any input validation issues and re-run" >> $GITHUB_STEP_SUMMARY
+              echo "### Validation Failed - Next Steps:" >> $GITHUB_STEP_SUMMARY
+              echo "- **Check instance name** - Ensure the instance name exists in the repository" >> $GITHUB_STEP_SUMMARY
+              echo "- **Available instances** - Review the validation logs for available instance names" >> $GITHUB_STEP_SUMMARY
+              echo "- **Fix input errors** - Correct any input validation issues and re-run" >> $GITHUB_STEP_SUMMARY
               ;;
             "execution_failed")
-              echo "### ❌ Execution Failed - Next Steps:" >> $GITHUB_STEP_SUMMARY
-              echo "- **📋 Review logs** - Check the execution step logs for detailed error information" >> $GITHUB_STEP_SUMMARY
-              echo "- **🔧 Fix configuration** - Address any Terragrunt or infrastructure issues" >> $GITHUB_STEP_SUMMARY
-              echo "- **🔄 Retry operation** - Re-run the workflow after fixing issues" >> $GITHUB_STEP_SUMMARY
+              echo "### Execution Failed - Next Steps:" >> $GITHUB_STEP_SUMMARY
+              echo "- **Review logs** - Check the execution step logs for detailed error information" >> $GITHUB_STEP_SUMMARY
+              echo "- **Fix configuration** - Address any Terragrunt or infrastructure issues" >> $GITHUB_STEP_SUMMARY
+              echo "- **Retry operation** - Re-run the workflow after fixing issues" >> $GITHUB_STEP_SUMMARY
               ;;
             "no_changes")
-              echo "### ℹ️ No Changes - Next Steps:" >> $GITHUB_STEP_SUMMARY
-              echo "- **✅ Instance up-to-date** - No changes were needed" >> $GITHUB_STEP_SUMMARY
-              echo "- **🔍 Verify state** - The current state matches the desired configuration" >> $GITHUB_STEP_SUMMARY
+              echo "### No Changes - Next Steps:" >> $GITHUB_STEP_SUMMARY
+              echo "- **Instance up-to-date** - No changes were needed" >> $GITHUB_STEP_SUMMARY
+              echo "- **Verify state** - The current state matches the desired configuration" >> $GITHUB_STEP_SUMMARY
               if [ "$ACTION" == "destroy" ]; then
-                echo "- **❓ Already destroyed** - The instance may already be destroyed" >> $GITHUB_STEP_SUMMARY
+                echo "- **Already destroyed** - The instance may already be destroyed" >> $GITHUB_STEP_SUMMARY
               fi
               ;;
           esac
@@ -455,7 +445,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**⚠️ Important Security Notes:**" >> $GITHUB_STEP_SUMMARY
+          echo "**Important Security Notes:**" >> $GITHUB_STEP_SUMMARY
           echo "- This workflow requires manual approval and confirmation for destructive actions" >> $GITHUB_STEP_SUMMARY
           echo "- Destroy operations require typing 'DESTROY' to confirm the action" >> $GITHUB_STEP_SUMMARY
           echo "- All actions are logged and auditable through GitHub Actions" >> $GITHUB_STEP_SUMMARY

@@ -58,11 +58,11 @@ class IPAllocationChecker:
         # Parse development environments
         dev_envs = self.allocations.get('development', {}).get('environments', {})
         self._parse_environment_networks(dev_envs, 'development')
-        
+
         # Parse perimeter environments
         perimeter_envs = self.allocations.get('perimeter', {}).get('environments', {})
         self._parse_environment_networks(perimeter_envs, 'perimeter')
-        
+
         # Parse production environments
         prod_envs = self.allocations.get('production', {}).get('environments', {})
         self._parse_environment_networks(prod_envs, 'production')
@@ -124,7 +124,7 @@ class IPAllocationChecker:
         for net in self.networks:
             network = net['network']
             prefix = network.prefixlen
-            
+
             # Check alignment based on prefix length
             if prefix == 21:
                 # /21 must be divisible by 8
@@ -165,11 +165,11 @@ class IPAllocationChecker:
             if env_type in by_type:
                 print(f"\n🌐 {env_type.upper()} Environments")
                 print("  " + "=" * 70)
-                
+
                 type_data = self.allocations.get(env_type, {})
                 if 'block' in type_data:
                     print(f"  Block: {type_data['block']} ({type_data.get('total_ips', 'N/A'):,} IPs)")
-                
+
                 for env, nets in by_type[env_type].items():
                     print(f"\n  📁 Environment: {env}")
                     print("  " + "─" * 60)
@@ -208,7 +208,7 @@ class IPAllocationChecker:
         # Show development block
         dev_block = ipaddress.IPv4Network(self.allocations['development']['block'])
         print(f"Development Block: {dev_block} ({dev_block.num_addresses:,} total IPs)")
-        
+
         # Show reserved environments
         print("\nReserved Development Environments (ready for use):")
         dev_envs = self.allocations['development']['environments']
@@ -219,7 +219,7 @@ class IPAllocationChecker:
         # Show perimeter block
         perimeter_block = ipaddress.IPv4Network(self.allocations['perimeter']['block'])
         print(f"\nPerimeter Block: {perimeter_block} ({perimeter_block.num_addresses:,} total IPs)")
-        
+
         # Show production block
         prod_block = ipaddress.IPv4Network(self.allocations['production']['block'])
         print(f"\nProduction Block: {prod_block} ({prod_block.num_addresses:,} total IPs)")
@@ -239,7 +239,7 @@ class IPAllocationChecker:
                 print(f"  - dev-{len(dev_envs)+i+1:02d}: {candidate}")
             next_third += 1
 
-    def suggest_next_cluster(self, env: str = 'dev-01'):
+    def suggest_next_cluster(self, env: str = 'dp-dev-01'):
         """Suggest next available cluster allocation."""
         print(f"🔮 Next available allocations for {env}\n")
 
@@ -254,35 +254,35 @@ class IPAllocationChecker:
 
         # Find next cluster ranges
         secondary_ranges = env_data.get('secondary_ranges', {})
-        
+
         # Count allocated clusters
         allocated_clusters = set()
         for range_name in secondary_ranges.keys():
             if '-' in range_name:
                 cluster_name = range_name.split('-')[0] + '-' + range_name.split('-')[1]
                 allocated_clusters.add(cluster_name)
-        
+
         next_cluster_num = len(allocated_clusters) + 1
         next_cluster_name = f"cluster-{next_cluster_num:02d}"
-        
+
         print(f"Next cluster: {next_cluster_name}")
-        
+
         # Check if ranges are pre-allocated
         pod_range_name = f"{next_cluster_name}-pods"
         service_range_name = f"{next_cluster_name}-services"
-        
+
         if pod_range_name in secondary_ranges:
             pod_data = secondary_ranges[pod_range_name]
             print(f"  Pod range:     {pod_data['cidr']} ({pod_data['size']:,} IPs)")
         else:
             print(f"  Pod range:     Not pre-allocated")
-            
+
         if service_range_name in secondary_ranges:
             service_data = secondary_ranges[service_range_name]
             print(f"  Service range: {service_data['cidr']} ({service_data['size']:,} IPs)")
         else:
             print(f"  Service range: Not pre-allocated")
-            
+
         if pod_range_name not in secondary_ranges:
             print("\nNo more pre-allocated cluster ranges available.")
             print("Additional ranges need to be defined in ip-allocation.yaml")
@@ -304,7 +304,7 @@ def main():
     elif command == "available":
         checker.show_available()
     elif command == "next":
-        env = sys.argv[2] if len(sys.argv) > 2 else 'dev-01'
+        env = sys.argv[2] if len(sys.argv) > 2 else 'dp-dev-01'
         checker.suggest_next_cluster(env)
     else:
         print(__doc__)

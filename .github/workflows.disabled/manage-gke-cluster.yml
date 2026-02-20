@@ -4,26 +4,27 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Action to perform'
+        description: "Action to perform"
         required: true
-        default: 'apply'
+        default: "apply"
         type: choice
         options:
           - apply
           - destroy
           - plan
       cluster:
-        description: 'GKE cluster to manage (format: project/cluster-name)'
+        description: "GKE cluster to manage (format: project/cluster-name)"
         required: true
         type: string
       environment:
-        description: 'Environment'
+        description: "Environment"
         required: true
-        default: 'development'
+        default: "development"
         type: choice
         options:
           - development
-          - staging
+          - perimeter
+          - sandbox
           - production
 
 permissions:
@@ -62,12 +63,16 @@ jobs:
               ACCOUNT="non-production"
               ENV_PATH="development"
               ;;
-            staging)
+            perimeter)
               ACCOUNT="non-production"
-              ENV_PATH="staging"
+              ENV_PATH="perimeter"
+              ;;
+            sandbox)
+              ACCOUNT="non-production"
+              ENV_PATH="sandbox"
               ;;
             production)
-              ACCOUNT="production"
+              ACCOUNT="prod-account"
               ENV_PATH="production"
               ;;
           esac
@@ -76,7 +81,7 @@ jobs:
           CLUSTER_PATH="live/${ACCOUNT}/${ENV_PATH}/${{ steps.parse.outputs.project }}/europe-west2/gke/${{ steps.parse.outputs.cluster }}"
 
           if [ ! -d "${CLUSTER_PATH}" ]; then
-            echo "❌ Cluster path not found: ${CLUSTER_PATH}"
+            echo "Error: Cluster path not found: ${CLUSTER_PATH}"
             exit 1
           fi
 
@@ -94,41 +99,6 @@ jobs:
               terragrunt run apply --auto-approve --terragrunt-non-interactive
               ;;
             destroy)
-              # For GKE clusters, disable deletion protection first
-              terragrunt run apply -target=google_container_cluster.this \
-                -var="deletion_protection=false" \
-                --auto-approve --terragrunt-non-interactive || true
-              
-              # Now destroy the cluster
               terragrunt run destroy --auto-approve --terragrunt-non-interactive
               ;;
           esac
-
-      - name: Get cluster credentials
-        if: inputs.action == 'apply'
-        run: |
-          cd ${{ steps.path.outputs.path }}
-          
-          # Get cluster details from terragrunt output
-          CLUSTER_NAME=$(terragrunt output -raw cluster_name 2>/dev/null || echo "")
-          CLUSTER_REGION=$(terragrunt output -raw region 2>/dev/null || echo "")
-          PROJECT_ID=$(terragrunt output -raw project_id 2>/dev/null || echo "")
-          
-          if [ -n "$CLUSTER_NAME" ] && [ -n "$CLUSTER_REGION" ] && [ -n "$PROJECT_ID" ]; then
-            echo "✅ GKE cluster deployed successfully!"
-            echo ""
-            echo "To connect to your cluster, run:"
-            echo "gcloud container clusters get-credentials $CLUSTER_NAME \\"
-            echo "  --region $CLUSTER_REGION \\"
-            echo "  --project $PROJECT_ID"
-          fi
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "## GKE Cluster Management Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Action**: ${{ inputs.action }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Cluster**: ${{ inputs.cluster }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Path**: ${{ steps.path.outputs.path }}" >> $GITHUB_STEP_SUMMARY

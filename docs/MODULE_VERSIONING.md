@@ -37,30 +37,22 @@ locals {
 
 To use these versions in your Terragrunt configurations:
 
-1. Include the _common/common.hcl file:
+1. Include `base.hcl` which automatically reads and merges `account.hcl`, `env.hcl`, `project.hcl`, `region.hcl`, and `common.hcl`:
 ```hcl
-include "common" {
-  path = "${get_parent_terragrunt_dir()}/_common/common.hcl"
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
 }
 ```
 
-2. Read the common variables:
-```hcl
-locals {
-  common_vars = read_terragrunt_config(find_in_parent_folders("_common/common.hcl"))
-  
-  merged_vars = merge(
-    local.account_vars.locals,
-    local.env_vars.locals,
-    local.common_vars.locals,
-  )
-}
-```
-
-3. Reference the module version in your source blocks:
+2. Reference the module version via `include.base.locals.module_versions`:
 ```hcl
 terraform {
-  source = "git::https://github.com/terraform-google-modules/terraform-google-sql-db.git//?ref=${local.merged_vars.module_versions.sql_db}"
+  source = "git::https://github.com/terraform-google-modules/terraform-google-sql-db.git//?ref=${include.base.locals.module_versions.sql_db}"
 }
 ```
 

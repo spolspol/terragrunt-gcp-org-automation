@@ -5,14 +5,18 @@ on:
     branches:
       - main
     paths:
-      - 'live/**/compute/*/scripts/*.sh'
+      - "live/**/compute/*/scripts/*.sh"
+      - "live/**/compute/*/scripts/*.py"
   workflow_dispatch:
     inputs:
       force_upload:
-        description: 'Force upload all scripts regardless of changes'
+        description: "Force upload all scripts regardless of changes"
         required: false
         type: boolean
         default: false
+
+permissions:
+  contents: read
 
 concurrency:
   group: upload-vm-scripts
@@ -20,7 +24,7 @@ concurrency:
 
 jobs:
   check-script-changes:
-    name: 🔍 Check Script Changes
+    name: Check Script Changes
     runs-on: ubuntu-latest
     outputs:
       should-upload: ${{ steps.check.outputs.should-upload }}
@@ -35,34 +39,34 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_upload }}" == "true" ]]; then
             echo "should-upload=true" >> $GITHUB_OUTPUT
-            echo "✅ Force upload requested - uploading all scripts"
+            echo "Force upload requested - uploading all scripts"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             echo "should-upload=true" >> $GITHUB_OUTPUT
-            echo "✅ Script changes detected in push - proceeding with upload"
+            echo "Script changes detected in push - proceeding with upload"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             # For manual dispatch without force, check recent changes
-            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E '^live/.*/compute/.*/scripts/.*\.sh$' || true)
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E '^live/.*/compute/.*/scripts/.*\.(sh|py)$' || true)
             if [[ -n "$CHANGED_FILES" ]]; then
               echo "should-upload=true" >> $GITHUB_OUTPUT
-              echo "📝 Recent script changes detected:"
+              echo "Recent script changes detected:"
               echo "$CHANGED_FILES"
             else
               echo "should-upload=false" >> $GITHUB_OUTPUT
-              echo "ℹ️ No recent script changes detected - use force_upload to upload anyway"
+              echo "No recent script changes detected - use force_upload to upload anyway"
             fi
           else
             echo "should-upload=false" >> $GITHUB_OUTPUT
-            echo "❌ Unknown trigger - skipping upload"
+            echo "Unknown trigger - skipping upload"
           fi
 
   get-env:
-    name: 📋 Get ENV
+    name: Get ENV
     uses: ./.github/workflows/common-env.yml
     needs: [check-script-changes]
     if: needs.check-script-changes.outputs.should-upload == 'true'
 
   upload-scripts:
-    name: 📤 Upload VM Scripts
+    name: Upload VM Scripts
     runs-on: ubuntu-latest
     needs: [check-script-changes, get-env]
     if: needs.check-script-changes.outputs.should-upload == 'true'
@@ -70,7 +74,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for change detection
+          fetch-depth: 0 # Full history for change detection
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -82,23 +86,23 @@ jobs:
 
       - name: Find and upload VM scripts
         run: |
-          echo "🔍 Searching for VM script directories..."
+          echo "Searching for VM script directories..."
 
           # Find all script directories under compute instances
           script_dirs=$(find live -type d -name "scripts" -path "*/compute/*" | sort)
 
           if [[ -z "$script_dirs" ]]; then
-            echo "❌ No script directories found"
+            echo "No script directories found"
             exit 0
           fi
 
-          echo "📁 Found script directories:"
+          echo "Found script directories:"
           echo "$script_dirs"
           echo ""
 
           # Process each script directory
           for script_dir in $script_dirs; do
-            echo "📂 Processing: $script_dir"
+            echo "Processing: $script_dir"
 
             # Extract VM type and project info from path
             # Path format: live/account/env/project/region/compute/vm-type/scripts
@@ -118,20 +122,21 @@ jobs:
             echo "  Project: $project"
             echo "  Region: $region"
 
-            # Determine project ID based on project path
+            # Determine project ID and bucket based on project path
             case "$project" in
-              "web-project")
-                # For web-project, we need to discover the actual project ID
-                # This is a known project in the example environment
-                PROJECT_ID=$(gcloud projects list --filter="name:*web-project*" --format="value(projectId)" --limit=1 2>/dev/null || echo "")
-                if [[ -z "$PROJECT_ID" ]]; then
-                  echo "❌ Could not find web-project project ID - skipping"
-                  continue
-                fi
+              "dp-dev-01")
+                # Development environment project
+                PROJECT_ID="org-dp-dev-01-a"
+                ;;
+              "vpn-gateway")
+                # Hub VPN Gateway project
+                PROJECT_ID="org-vpn-gateway"
+                # VPN Gateway uses a fixed bucket name
+                FIXED_BUCKET="org-vpn-gateway-vm-scripts"
                 ;;
               *)
-                # For other projects, try to use the project name as the ID
-                PROJECT_ID="$project"
+                echo "  Unknown project: $project - skipping"
+                continue
                 ;;
             esac
 
@@ -140,12 +145,17 @@ jobs:
             # Set GCP project context
             gcloud config set project "$PROJECT_ID"
 
-            # Discover bucket using pattern matching
-            echo "  🔍 Discovering vm-scripts bucket..."
-            BUCKET_NAME=$(gsutil ls -p "$PROJECT_ID" | grep "gs://.*vm-scripts" | head -1 | sed 's|gs://||' | sed 's|/$||')
+            # Discover bucket using pattern matching (unless fixed bucket is set)
+            echo "  Discovering vm-scripts bucket..."
+            if [[ -n "${FIXED_BUCKET:-}" ]]; then
+              BUCKET_NAME="$FIXED_BUCKET"
+              unset FIXED_BUCKET  # Reset for next iteration
+            else
+              BUCKET_NAME=$(gsutil ls -p "$PROJECT_ID" | grep "gs://.*vm-scripts" | head -1 | sed 's|gs://||' | sed 's|/$||')
+            fi
 
             if [[ -z "$BUCKET_NAME" ]]; then
-              echo "❌ No vm-scripts bucket found in project $PROJECT_ID - skipping"
+              echo "  No vm-scripts bucket found in project $PROJECT_ID - skipping"
               continue
             fi
 
@@ -154,37 +164,50 @@ jobs:
 
             # Check if bucket exists
             if ! gsutil ls "gs://$BUCKET_NAME" >/dev/null 2>&1; then
-              echo "❌ Bucket gs://$BUCKET_NAME does not exist - skipping"
+              echo "  Bucket gs://$BUCKET_NAME does not exist - skipping"
               continue
             fi
 
-            # Check if scripts directory has files
-            script_files=$(find "$script_dir" -type f -name "*.sh" | wc -l)
-            if [[ $script_files -eq 0 ]]; then
-              echo "⚠️  No .sh files found in $script_dir - skipping"
+            # Check if scripts directory has files (shell or Python)
+            sh_files=$(find "$script_dir" -type f -name "*.sh" | wc -l)
+            py_files=$(find "$script_dir" -type f -name "*.py" | wc -l)
+            total_files=$((sh_files + py_files))
+
+            if [[ $total_files -eq 0 ]]; then
+              echo "  No script files found in $script_dir - skipping"
               continue
             fi
 
-            echo "  Found $script_files shell script(s)"
+            echo "  Found $sh_files shell script(s) and $py_files Python script(s)"
 
             # Upload scripts to appropriate folder in bucket
-            echo "  📤 Uploading scripts..."
+            echo "  Uploading scripts..."
 
-            # Create target directory structure in bucket
-            gsutil -m cp -r "$script_dir"/*.sh "gs://$BUCKET_NAME/$vm_type/" || {
-              echo "❌ Failed to upload scripts from $script_dir"
-              exit 1
-            }
+            # Upload shell scripts if present
+            if [[ $sh_files -gt 0 ]]; then
+              gsutil -m cp -r "$script_dir"/*.sh "gs://$BUCKET_NAME/$vm_type/" || {
+                echo "  Failed to upload shell scripts from $script_dir"
+                exit 1
+              }
+            fi
 
-            echo "  ✅ Successfully uploaded scripts from $script_dir"
+            # Upload Python scripts if present
+            if [[ $py_files -gt 0 ]]; then
+              gsutil -m cp -r "$script_dir"/*.py "gs://$BUCKET_NAME/$vm_type/" || {
+                echo "  Failed to upload Python scripts from $script_dir"
+                exit 1
+              }
+            fi
+
+            echo "  Successfully uploaded scripts from $script_dir"
             echo ""
           done
 
-          echo "🎉 All VM scripts uploaded successfully!"
+          echo "All VM scripts uploaded successfully!"
 
       - name: Verify uploads
         run: |
-          echo "🔍 Verifying uploaded scripts..."
+          echo "Verifying uploaded scripts..."
 
           # List all uploaded scripts for verification
           for script_dir in $(find live -type d -name "scripts" -path "*/compute/*" | sort); do
@@ -196,38 +219,38 @@ jobs:
             project="${path_parts[3]}"
 
             case "$project" in
-              "web-project")
-                # Discover project ID
-                PROJECT_ID=$(gcloud projects list --filter="name:*web-project*" --format="value(projectId)" --limit=1 2>/dev/null || echo "")
-                if [[ -z "$PROJECT_ID" ]]; then
-                  continue
-                fi
-                # Set project context and discover bucket
+              "dp-dev-01")
+                PROJECT_ID="org-dp-dev-01-a"
                 gcloud config set project "$PROJECT_ID"
                 BUCKET_NAME=$(gsutil ls -p "$PROJECT_ID" | grep "gs://.*vm-scripts" | head -1 | sed 's|gs://||' | sed 's|/$||')
                 if [[ -z "$BUCKET_NAME" ]]; then
                   continue
                 fi
                 ;;
+              "vpn-gateway")
+                PROJECT_ID="org-vpn-gateway"
+                gcloud config set project "$PROJECT_ID"
+                BUCKET_NAME="org-vpn-gateway-vm-scripts"
+                ;;
               *)
                 continue
                 ;;
             esac
 
-            echo "📋 Scripts in gs://$BUCKET_NAME/$vm_type/:"
+            echo "Scripts in gs://$BUCKET_NAME/$vm_type/:"
             gsutil ls "gs://$BUCKET_NAME/$vm_type/" || echo "  (empty or not found)"
             echo ""
           done
 
   workflow-summary:
-    name: 📊 Workflow Summary
+    name: Workflow Summary
     runs-on: ubuntu-latest
     needs: [check-script-changes, upload-scripts]
     if: always()
     steps:
       - name: Generate workflow summary
         run: |
-          echo "## 📤 VM Scripts Upload Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## VM Scripts Upload Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Check why workflow ran
@@ -247,16 +270,16 @@ jobs:
 
           # Check execution results
           if [[ "${{ needs.check-script-changes.outputs.should-upload }}" != "true" ]]; then
-            echo "ℹ️ **Result**: Upload skipped" >> $GITHUB_STEP_SUMMARY
+            echo "**Result**: Upload skipped" >> $GITHUB_STEP_SUMMARY
             echo "**Reason**: No script changes detected" >> $GITHUB_STEP_SUMMARY
           elif [[ "${{ needs.upload-scripts.result }}" == "success" ]]; then
-            echo "✅ **Result**: Scripts uploaded successfully" >> $GITHUB_STEP_SUMMARY
+            echo "**Result**: Scripts uploaded successfully" >> $GITHUB_STEP_SUMMARY
             echo "**Scripts**: Updated in GCS vm-scripts buckets" >> $GITHUB_STEP_SUMMARY
           elif [[ "${{ needs.upload-scripts.result }}" == "failure" ]]; then
-            echo "❌ **Result**: Upload failed" >> $GITHUB_STEP_SUMMARY
+            echo "**Result**: Upload failed" >> $GITHUB_STEP_SUMMARY
             echo "**Reason**: Check upload job logs for details" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ **Result**: Upload skipped" >> $GITHUB_STEP_SUMMARY
+            echo "**Result**: Upload skipped" >> $GITHUB_STEP_SUMMARY
             echo "**Reason**: Conditions not met" >> $GITHUB_STEP_SUMMARY
           fi
 

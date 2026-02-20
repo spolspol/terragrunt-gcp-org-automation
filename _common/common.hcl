@@ -7,24 +7,31 @@ locals {
   # Comprehensive module versions - centralized for consistency
   module_versions = {
     # Google Cloud modules
-    bigquery        = "v10.1.0"
-    sql_db          = "v15.0.0"
-    vm              = "v13.2.4"
-    network         = "v11.1.1"
-    cloud_router    = "v7.1.0"
-    gke             = "v37.0.0"
-    cloud_nat       = "v5.3.0"
-    iam             = "v8.1.0"
-    secret_manager  = "v0.8.0"
-    cloud_storage   = "v11.0.0"
-    cloud_run       = "v4.0.0"
-    cloud_function  = "v3.1.0"
-    pubsub          = "v5.0.0"
-    load_balancer   = "v8.0.0"
-    monitoring      = "v7.1.0"
-    project_factory = "v18.0.0"
-    folders         = "v5.0.0"
-    address         = "v3.2.0"
+    bigquery                      = "v10.1.0"
+    sql_db                        = "v26.2.1"
+    vm                            = "v13.2.4"
+    network                       = "v12.0.0"
+    cloud_router                  = "v7.1.0"
+    gke                           = "v41.0.2"
+    cloud_nat                     = "v5.4.0"
+    cloud_dns                     = "v6.0.0"
+    certificate_authority_service = "v47.0.0"
+    certificate_manager           = "v47.0.0" # Fabric module, same repo as CAS
+    cloud_armor                   = "v7.0.0"  # GoogleCloudPlatform/terraform-google-cloud-armor
+    iam                           = "v8.1.0"
+    service_accounts              = "v4.7.0" # Service account management (simple-sa submodule)
+    secret_manager                = "v0.8.0"
+    cloud_storage                 = "v11.0.0"
+    cloud_run                     = "v0.22.0"
+    cloud_function                = "v3.1.0"
+    pubsub                        = "v5.0.0"
+    load_balancer                 = "v12.0.0"
+    artifact_registry             = "v0.8.2"
+    monitoring                    = "v7.1.0"
+    project_factory               = "v18.0.0"
+    folders                       = "v5.0.0"
+    address                       = "v3.2.0"
+    vpn                           = "v5.0.0" # HA VPN and site-to-site connectivity
 
     # Supporting modules
     terraform_validator = "v0.6.0"
@@ -34,10 +41,13 @@ locals {
     external_ip_firewall   = "v1.1.0"
     cloudflare             = "v4.0.0"
     null_label             = "v0.25.0"
-    private_service_access = "main" # Coalfire module - using main branch
+    private_service_access = "v1.0.4" # Coalfire module - latest stable version
+
+    # Network Connectivity Center
+    network_connectivity_center = "v12.0.0"
 
     # Custom modules
-    argocd = "main" # Bootstrap ArgoCD module
+    argocd = "v3-unstable" # Bootstrap ArgoCD module
   }
 
   # Compute-specific defaults
@@ -72,7 +82,14 @@ locals {
     }
   }
 
-  # Common tags applied to all resources
+  # Common labels applied to all resources
+  labels = {
+    terraform_managed = "true"
+    repository        = "terragrunt-gcp-org-automation"
+    owner             = "infrastructure-team"
+  }
+
+  # Legacy alias for backward compatibility
   common_tags = {
     terraform_managed = "true"
     repository        = "terragrunt-gcp-org-automation"
@@ -216,7 +233,7 @@ locals {
     non-production = {
       machine_type        = "e2-medium"
       disk_size_gb        = 10
-      disk_type           = "pd-ssd"
+      disk_type           = "pd-standard"
       preemptible         = false
       automatic_restart   = false
       deletion_protection = false

@@ -41,7 +41,7 @@ Private Service Access configurations are located within the region directories 
 live/
 └── non-production/
     └── development/
-        └── dev-01/
+        └── dp-dev-01/
             └── europe-west2/
                 └── private-service-access/  # Private Service Access configuration
                     └── terragrunt.hcl
@@ -58,8 +58,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "private_service_access_template" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/private_service_access.hcl"
+  path           = "${get_repo_root()}/_common/templates/private_service_access.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "network" {
@@ -81,40 +87,24 @@ dependency "project" {
 }
 
 locals {
-  merged_vars = merge(
-    try(read_terragrunt_config(find_in_parent_folders("account.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("env.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("project.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals, {})
-  )
-
-  name_prefix = try(local.merged_vars.name_prefix, "org")
-  private_ip_range_name = "${local.name_prefix}-${local.merged_vars.project}-private-service-access"
+  name_prefix           = try(include.base.locals.merged.name_prefix, "org")
+  private_ip_range_name = "${local.name_prefix}-${include.base.locals.merged.project}-private-service-access"
 }
 
-inputs = merge(
-  try(read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/private_service_access.hcl").inputs, {}),
-  local.merged_vars,
-  {
-    project_id           = try(dependency.project.outputs.project_id, "mock-project-id")
-    network              = try(dependency.network.outputs.network_self_link, "projects/mock-project/global/networks/mock-network")
-    private_ip_name      = local.private_ip_range_name
-    environment_type     = try(local.merged_vars.environment_type, "non-production")
-    
-    labels = merge(
-      {
-        component        = "private-service-access"
-        environment      = try(local.merged_vars.environment, "unknown")
-        environment_type = try(local.merged_vars.environment_type, "non-production")
-        name_prefix      = local.name_prefix
-        purpose          = "cloud-sql-peering"
-      },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {}),
-      try(local.merged_vars.project_labels, {})
-    )
-  }
-)
+inputs = {
+  project_id           = try(dependency.project.outputs.project_id, "mock-project-id")
+  network              = try(dependency.network.outputs.network_self_link, "projects/mock-project/global/networks/mock-network")
+  private_ip_name      = local.private_ip_range_name
+  environment_type     = try(include.base.locals.merged.environment_type, "non-production")
+
+  labels = merge(
+    include.base.locals.standard_labels,
+    {
+      component = "private-service-access"
+      purpose   = "cloud-sql-peering"
+    }
+  )
+}
 ```
 
 ### Integration with Cloud SQL

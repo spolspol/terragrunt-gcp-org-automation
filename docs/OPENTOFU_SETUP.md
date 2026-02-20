@@ -31,7 +31,7 @@ chmod +x install-opentofu.sh
 
 Manual installation:
 ```bash
-curl -fsSL https://github.com/opentofu/opentofu/releases/download/v1.6.0/tofu_1.6.0_linux_amd64.zip -o opentofu.zip
+curl -fsSL https://github.com/opentofu/opentofu/releases/download/v1.11.0/tofu_1.11.0_linux_amd64.zip -o opentofu.zip
 unzip opentofu.zip
 chmod +x tofu
 sudo mv tofu /usr/local/bin/
@@ -45,7 +45,7 @@ tofu version
 
 You should see output like:
 ```
-OpenTofu v1.6.0
+OpenTofu v1.11.0
 ```
 
 ## Project Configuration

@@ -21,7 +21,7 @@ The Project template (`_common/templates/project.hcl`) provides a standardized a
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
-| `name` | Project name | `"dev-01"` |
+| `name` | Project name | `"dp-dev-01"` |
 | `org_id` | Organization ID | `"123456789"` |
 | `billing_account` | Billing account ID | `"ABCDEF-123456-789012"` |
 | `folder_id` | Parent folder ID | `"folders/123456789"` |
@@ -46,7 +46,7 @@ Project configurations are located within the environment directories following 
 live/
 └── non-production/
     └── development/
-        └── dev-01/  # Environment specific project
+        └── dp-dev-01/  # Environment specific project
             └── project/     # Project configuration directory
                 └── terragrunt.hcl
 ```
@@ -60,8 +60,14 @@ include "root" {
   path = find_in_parent_folders("root.hcl")
 }
 
+include "base" {
+  path   = "${get_repo_root()}/_common/base.hcl"
+  expose = true
+}
+
 include "project_template" {
-  path = "${get_parent_terragrunt_dir()}/_common/templates/project.hcl"
+  path           = "${get_repo_root()}/_common/templates/project.hcl"
+  merge_strategy = "deep"
 }
 
 dependency "folder" {
@@ -73,42 +79,28 @@ dependency "folder" {
   skip_outputs = true
 }
 
-locals {
-  merged_vars = merge(
-    try(read_terragrunt_config(find_in_parent_folders("account.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("env.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("project.hcl")).locals, {}),
-    try(read_terragrunt_config(find_in_parent_folders("_common/common.hcl")).locals, {})
+inputs = {
+  name            = "${include.base.locals.merged.name_prefix}-${include.base.locals.merged.project_id}"
+  org_id          = include.base.locals.merged.org_id
+  billing_account = include.base.locals.merged.billing_account
+  folder_id       = try(dependency.folder.outputs.folder_id, "folders/mock-folder-id")
+
+  # Environment-specific budget
+  budget_amount = include.base.locals.merged.environment_type == "production" ? 1000 : 100
+
+  budget_alert_emails = [
+    "finance@example.com",
+    "devops@example.com"
+  ]
+
+  labels = merge(
+    {
+      component   = "project"
+      environment = include.base.locals.environment
+    },
+    include.base.locals.standard_labels
   )
 }
-
-inputs = merge(
-  try(read_terragrunt_config("${get_parent_terragrunt_dir()}/_common/templates/project.hcl").inputs, {}),
-  local.merged_vars,
-  {
-    name            = "${local.merged_vars.name_prefix}-${local.merged_vars.project_id}"
-    org_id          = local.merged_vars.org_id
-    billing_account = local.merged_vars.billing_account
-    folder_id       = try(dependency.folder.outputs.folder_id, "folders/mock-folder-id")
-    
-    # Environment-specific budget
-    budget_amount = local.merged_vars.environment_type == "production" ? 1000 : 100
-    
-    budget_alert_emails = [
-      "finance@example.com",
-      "devops@example.com"
-    ]
-    
-    labels = merge(
-      {
-        component   = "project"
-        environment = local.merged_vars.environment
-      },
-      try(local.merged_vars.org_labels, {}),
-      try(local.merged_vars.env_labels, {})
-    )
-  }
-)
 ```
 
 ### Advanced Usage
