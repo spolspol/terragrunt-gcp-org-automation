@@ -1,19 +1,12 @@
-<!-- Space: PE -->
-<!-- Title: Cloud Run Template -->
-<!-- Parent: Compute Resources -->
-<!-- Label: template -->
-<!-- Label: cloud-run -->
-<!-- Label: serverless -->
-<!-- Label: howto -->
-<!-- Label: intermediate -->
-
 # Cloud Run Template
 
 This document describes the Cloud Run Terragrunt template for deploying Cloud Run services consistently across environments.
 
 ## Overview
 
-The Cloud Run template lives at `_common/templates/cloud-run.hcl` and uses the official `GoogleCloudPlatform/terraform-google-cloud-run` module (v2 submodule). It provides standardized defaults for security, scaling, and labels while keeping service-specific configuration in each Cloud Run unit.
+Cloud Run is the default serverless compute platform in this codebase. The template standardises ingress, scaling, and identity settings so that individual services only declare what makes them unique.
+
+The template lives at `_common/templates/cloud-run.hcl` and uses the official `GoogleCloudPlatform/terraform-google-cloud-run` module (v2 submodule) v0.22.0. Version is pinned in `_common/common.hcl` as `module_versions.cloud_run`.
 
 ## Defaults
 
@@ -182,6 +175,5 @@ inputs = {
 - Keep ingress internal by default and explicitly opt into public exposure.
 - Use least-privilege service accounts and limit IAM invokers to required identities.
 - Cap max instances to control cost and avoid runaway scaling.
-- Document service-specific overrides in the service `terragrunt.hcl`.
-- Validate VPC access configuration and ensure connectors exist before applying.
 - Use Direct VPC Egress over VPC Connector for Cloud NAT routing (avoids connector scaling limits).
+- Validate VPC access configuration and ensure connectors exist before applying.

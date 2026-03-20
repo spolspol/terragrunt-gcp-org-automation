@@ -1,109 +1,83 @@
 # Web Server Example
 
-This example demonstrates how to deploy a simple nginx web server using Terragrunt and GCP Compute Engine.
-
-## Overview
-
-The web server example includes:
-- **Nginx Web Server**: Serves static content with SSL support
-- **Static Content Bucket**: GCS bucket for website files
-- **SSL Certificates**: Automated SSL via Let's Encrypt
-- **External IP**: Static IP address for consistent access
-- **Firewall Rules**: Allow HTTP/HTTPS traffic
+This example deploys an nginx web server on GCP Compute Engine with SSL, static content from a GCS bucket, and firewall-controlled access.
 
 ## Architecture
 
 ```
 web-project/
-├── vpc-network/              # VPC network configuration
-├── secrets/                  # SSL configuration secrets
-│   ├── ssl-cert-email/      # Email for Let's Encrypt
-│   └── ssl-domains/         # Domains for SSL certificates
+├── vpc-network/              # VPC network
+├── secrets/
+│   ├── ssl-cert-email/       # Let's Encrypt email
+│   └── ssl-domains/          # SSL domain list
 └── europe-west2/
-    ├── external-ip/         # Static IP address
-    │   └── web-server-ip/
-    ├── firewall-rules/      # HTTP/HTTPS access rules
-    │   └── allow-web-traffic/
-    ├── buckets/             # Static content storage
-    │   └── static-content/
-    └── compute/             # Web server instance
+    ├── external-ip/
+    │   └── web-server-ip/    # Static external IP
+    ├── firewall-rules/
+    │   └── allow-web-traffic/ # HTTP/HTTPS ingress
+    ├── buckets/
+    │   └── static-content/   # Website files
+    └── compute/
         └── web-server-01/
-            ├── scripts/     # Bootstrap & setup scripts
-            ├── iam-bindings/# Service account permissions
-            └── vm/          # Compute instance
+            ├── scripts/      # Bootstrap and setup scripts
+            ├── iam-bindings/ # Service account permissions
+            └── vm/           # Compute instance
 ```
 
-## Deployment Steps
+## Deployment
 
-1. **Deploy Infrastructure**:
-   ```bash
-   cd live/non-production/development/dev-01
-   
-   # Deploy in order
-   terragrunt run-all apply --terragrunt-include-dir vpc-network
-   terragrunt run-all apply --terragrunt-include-dir secrets
-   terragrunt run-all apply --terragrunt-include-dir europe-west2/external-ip
-   terragrunt run-all apply --terragrunt-include-dir europe-west2/firewall-rules
-   terragrunt run-all apply --terragrunt-include-dir europe-west2/buckets
-   terragrunt run-all apply --terragrunt-include-dir europe-west2/compute
-   ```
+```bash
+cd live/non-production/development/platform/dp-dev-01
 
-2. **Upload Scripts to GCS**:
-   The GitHub Actions workflow automatically uploads scripts when changes are pushed.
-   
-   Manual upload:
-   ```bash
-   gsutil cp scripts/*.sh gs://[PROJECT]-vm-scripts/web-server-01/
-   ```
+# Deploy in dependency order
+terragrunt apply -auto-approve  # in vpc-network/
+terragrunt apply -auto-approve  # in secrets/ssl-cert-email/ and ssl-domains/
+terragrunt apply -auto-approve  # in europe-west2/external-ip/web-server-ip/
+terragrunt apply -auto-approve  # in europe-west2/firewall-rules/allow-web-traffic/
+terragrunt apply -auto-approve  # in europe-west2/buckets/static-content/
+terragrunt apply -auto-approve  # in europe-west2/compute/web-server-01/
+```
 
-3. **Upload Static Content**:
-   ```bash
-   # Upload your website files
-   gsutil -m cp -r ./website/* gs://[PROJECT]-static-content/
-   ```
+Upload scripts and content:
 
-4. **Access the Server**:
-   - Get the external IP: `gcloud compute instances describe web-server-01 --zone=europe-west2-a`
-   - Visit: `http://[EXTERNAL_IP]`
+```bash
+# Scripts (automated via GitHub Actions on push)
+gsutil cp scripts/*.sh gs://[PROJECT]-vm-scripts/web-server-01/
 
-## Configuration
+# Static content
+gsutil -m cp -r ./website/* gs://[PROJECT]-static-content/
+```
 
-### SSL Setup
+Access the server:
 
-1. Update the SSL secrets with your information:
-   ```bash
-   # Update email
-   echo -n "your-email@example.com" | gcloud secrets versions add ssl-cert-email --data-file=-
-   
-   # Update domains
-   echo -n "yourdomain.com,www.yourdomain.com" | gcloud secrets versions add ssl-domains --data-file=-
-   ```
+```bash
+gcloud compute instances describe web-server-01 --zone=europe-west2-a
+# Visit http://[EXTERNAL_IP]
+```
 
-2. The server will automatically obtain SSL certificates on first boot.
+## SSL Configuration
 
-### Static Content
+Update the secrets, then the server obtains certificates automatically on first boot:
 
-- Upload files to the `static-content` bucket
-- Files are synced to `/var/www/html` on the server
-- Directory structure is preserved
+```bash
+echo -n "your-email@example.com" | gcloud secrets versions add ssl-cert-email --data-file=-
+echo -n "yourdomain.com,www.yourdomain.com" | gcloud secrets versions add ssl-domains --data-file=-
+```
 
-## Customization
+## Static Content
 
-### Machine Type
-Edit `terragrunt.hcl` to change the instance size:
+Files uploaded to the `static-content` bucket are synced to `/var/www/html` on the server. Directory structure is preserved.
+
+## Customisation
+
+**Machine type** -- edit `terragrunt.hcl`:
 ```hcl
 machine_type = include.base.locals.merged.compute_defaults.machine_types[include.base.locals.environment].medium
 ```
 
-### Startup Script
-The `nginx-setup.sh` script can be customized to:
-- Install additional packages
-- Configure nginx differently
-- Set up application servers
-- Add monitoring agents
+**Startup script** -- customise `nginx-setup.sh` to install additional packages, change nginx configuration, or add monitoring agents.
 
-### Firewall Rules
-Add custom rules in `firewall-rules/allow-web-traffic/terragrunt.hcl`:
+**Firewall rules** -- add custom rules in `firewall-rules/allow-web-traffic/terragrunt.hcl`:
 ```hcl
 {
   name        = "${include.base.locals.merged.project_name}-allow-custom"
@@ -112,55 +86,45 @@ Add custom rules in `firewall-rules/allow-web-traffic/terragrunt.hcl`:
   priority    = 1000
   ranges      = ["0.0.0.0/0"]
   target_tags = ["web-server"]
-  
-  allow = [{
-    protocol = "tcp"
-    ports    = ["8080"]
-  }]
+  allow       = [{ protocol = "tcp", ports = ["8080"] }]
 }
 ```
 
 ## Monitoring
 
-- **Logs**: Available in Cloud Logging under `nginx` log group
-- **Metrics**: CPU, memory, and disk metrics in Cloud Monitoring
-- **Health Check**: Access `/health` endpoint for simple health verification
+- **Logs**: Cloud Logging under the `nginx` log group
+- **Metrics**: CPU, memory, and disk in Cloud Monitoring
+- **Health Check**: `/health` endpoint for simple verification
 
-## Security Considerations
+## Security
 
-- SSL/TLS enabled by default (when domains configured)
+- SSL/TLS enabled by default when domains are configured
 - Firewall rules restrict access to necessary ports only
 - SSH access limited to Cloud IAP
-- Service account follows least privilege principle
+- Service account follows least privilege
 - Static content bucket is read-only from the instance
 
-## Cost Optimization
+## Cost Optimisation
 
-- Uses preemptible instances in non-production
-- Small machine type by default (e2-micro)
+- Preemptible instances in non-production
+- Default machine type: `e2-micro`
 - Regional bucket for lower storage costs
-- Lifecycle rules to clean up old content versions
+- Lifecycle rules clean up old content versions
 
 ## Troubleshooting
 
-1. **Check Instance Logs**:
-   ```bash
-   gcloud compute instances get-serial-port-output web-server-01 --zone=europe-west2-a
-   ```
+```bash
+# Serial port output
+gcloud compute instances get-serial-port-output web-server-01 --zone=europe-west2-a
 
-2. **SSH to Instance**:
-   ```bash
-   gcloud compute ssh web-server-01 --zone=europe-west2-a --tunnel-through-iap
-   ```
+# SSH via IAP
+gcloud compute ssh web-server-01 --zone=europe-west2-a --tunnel-through-iap
 
-3. **Check Nginx Status**:
-   ```bash
-   sudo systemctl status nginx
-   sudo nginx -t  # Test configuration
-   ```
+# Nginx status and config test
+sudo systemctl status nginx
+sudo nginx -t
 
-4. **View Nginx Logs**:
-   ```bash
-   sudo tail -f /var/log/nginx/access.log
-   sudo tail -f /var/log/nginx/error.log
-   ```
+# Nginx logs
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
+```

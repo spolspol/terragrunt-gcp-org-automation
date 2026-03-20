@@ -116,30 +116,11 @@ This will automatically use the credentials from the GOOGLE_APPLICATION_CREDENTI
 
 ## Security Best Practices
 
-1. **Never commit service account keys** to version control
-   - Add `*.json` to your `.gitignore` file
-   - Consider using Git hooks to prevent accidental commits
-
-2. **Rotate keys regularly**
-   - Every 90 days is recommended
-   - Create a new key before deleting the old one
-
-3. **Use minimal permissions**
-   - Follow the principle of least privilege
-   - Create different service accounts for different purposes
-
-4. **Use different service accounts for different environments**
-   - Development
-   - Staging
-   - Production
-
-5. **Consider using Workload Identity Federation**
-   - For CI/CD pipelines
-   - Avoids the need for service account keys
-
-6. **Audit service account usage**
-   - Enable audit logging
-   - Review service account activity regularly
+1. **Never commit service account keys** to version control -- add `*.json` to `.gitignore`
+2. **Rotate keys regularly** -- every 90 days; create a new key before deleting the old one
+3. **Use minimal permissions** -- follow least privilege; separate service accounts per purpose
+4. **Use different service accounts per environment** (development, staging, production)
+5. **Consider Workload Identity Federation** for CI/CD pipelines to avoid long-lived keys
 
 ## Handling Multiple Projects
 

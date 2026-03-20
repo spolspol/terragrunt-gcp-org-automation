@@ -161,14 +161,6 @@ Security is built into every layer:
 - **Audit logging**: Comprehensive audit trails
 - **Firewall rules**: Default deny with explicit allow rules
 
-Security is built into every layer:
-
-- **Network isolation**: Private subnets by default
-- **Identity management**: Service accounts with least privilege
-- **Secrets management**: No hardcoded secrets, Google Secret Manager integration
-- **Encryption**: At-rest and in-transit encryption
-- **Audit logging**: Comprehensive audit trails
-
 **Rationale**:
 - Compliance with security best practices
 - Protection against common vulnerabilities

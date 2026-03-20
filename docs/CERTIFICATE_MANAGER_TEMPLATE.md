@@ -1,33 +1,6 @@
-<!-- Space: PE -->
-<!-- Title: Certificate Manager Template -->
-<!-- Parent: Networking Resources -->
-<!-- Label: template -->
-<!-- Label: certificate-manager -->
-<!-- Label: ssl -->
-<!-- Label: tls -->
-<!-- Label: security -->
-<!-- Label: howto -->
-<!-- Label: intermediate -->
-
 # Certificate Manager Template
 
-This document describes the Certificate Manager Terragrunt template for managing SSL/TLS certificates via Google Certificate Authority Service (CAS) with auto-renewal.
-
-## Overview
-
-The Certificate Manager template lives at `_common/templates/certificate_manager.hcl` and uses the [Cloud Foundation Fabric](https://github.com/GoogleCloudPlatform/cloud-foundation-fabric) `certificate-manager` module v47.0.0. It manages issuance configs, certificates, and certificate maps -- all the resources needed to issue and attach CAS-signed certificates to load balancers.
-
-Key capabilities:
-- Private CA-issued certificates via CAS issuance configs
-- Auto-renewal with configurable rotation windows
-- Certificate maps for load balancer attachment
-- Multiple certificates per map (hostname-based routing)
-
-## Template Location
-
-```
-_common/templates/certificate_manager.hcl
-```
+The Certificate Manager template (`_common/templates/certificate_manager.hcl`) manages SSL/TLS certificate lifecycle via Google Certificate Authority Service (CAS) with auto-renewal. It uses the [Cloud Foundation Fabric](https://github.com/GoogleCloudPlatform/cloud-foundation-fabric) `certificate-manager` module v47.0.0 to create issuance configs, certificates, and certificate maps -- everything needed to issue CAS-signed certificates and attach them to load balancers.
 
 ## Module Source
 
@@ -35,7 +8,7 @@ _common/templates/certificate_manager.hcl
 git::https://github.com/GoogleCloudPlatform/cloud-foundation-fabric//modules/certificate-manager?ref=v47.0.0
 ```
 
-Version pinned in `_common/common.hcl` as `module_versions.certificate_manager`. This is the same Fabric repository as the CAS module.
+Version pinned in `_common/common.hcl` as `module_versions.certificate_manager`.
 
 ## Required Inputs
 
@@ -186,40 +159,7 @@ inputs = {
 
 ### Multiple Certificates per Map
 
-Add additional entries when a single load balancer serves multiple hostnames:
-
-```hcl
-inputs = {
-  certificates = {
-    api-cert = {
-      managed = {
-        domains         = ["api.example.com"]
-        issuance_config = "my-issuance-config"
-      }
-    }
-    admin-cert = {
-      managed = {
-        domains         = ["admin.example.com"]
-        issuance_config = "my-issuance-config"
-      }
-    }
-  }
-
-  map = {
-    name = "multi-host-cert-map"
-    entries = {
-      api = {
-        certificates = ["api-cert"]
-        hostname     = "api.example.com"
-      }
-      admin = {
-        certificates = ["admin-cert"]
-        hostname     = "admin.example.com"
-      }
-    }
-  }
-}
-```
+For a single LB serving multiple hostnames, add additional `certificates` entries and corresponding `map.entries` with distinct hostnames. The structure mirrors the basic usage example above.
 
 ## Dependencies
 
@@ -266,15 +206,6 @@ inputs = {
 
 Without both steps, certificates will remain stuck in `PROVISIONING` with `AUTHORIZATION_ISSUE`.
 
-The CAS CA hierarchy for the current UAT environment:
-
-```
-Root CA (dev-pki project)
-  └── Subordinate CA (uat-pki project, org-uat-pool-01)
-        ├── IAM: gg_org-devops (certificateRequester)
-        └── IAM: service-<PROJECT_NUMBER> (certificateRequester) <- fn-dev-01 CM agent
-```
-
 ## CI/CD Integration
 
 | Setting | Value |
@@ -290,10 +221,9 @@ The resource is automatically detected and deployed by the IaC Engine workflow w
 
 - Use **ECDSA_P256** for key algorithm -- better performance than RSA for TLS handshakes.
 - Set **rotation window to 25%** to allow adequate time for renewal and propagation.
-- Keep **lifetime at 30 days maximum** (`2592000s`) -- this is the GCP limit for issuance configs and follows short-lived certificate best practice.
+- Keep **lifetime at 30 days maximum** (`2592000s`) -- GCP limit for issuance configs.
 - Always chain through a **subordinate CA**, never issue directly from the root CA.
-- Use **certificate maps** (not direct SSL certificate references) for load balancer attachment -- maps allow zero-downtime certificate rotation.
-- Name certificates and map entries consistently to aid debugging.
+- Use **certificate maps** (not direct SSL certificate references) for LB attachment -- maps allow zero-downtime rotation.
 
 ## Troubleshooting
 

@@ -2,24 +2,11 @@
 
 This document describes the IP allocation strategy and management for the GCP infrastructure managed through Terragrunt.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [IP Allocation Strategy](#ip-allocation-strategy)
-- [Network Blocks](#network-blocks)
-- [Environment Allocations](#environment-allocations)
-- [CIDR Alignment Rules](#cidr-alignment-rules)
-- [Tracking and Validation](#tracking-and-validation)
-- [Future Planning](#future-planning)
+> **Note**: The canonical IP allocations are maintained in `ip-allocation.yaml`. The current active project ranges are: vpn-gateway `10.11.0.0/16`, fn-dev-01 `10.20.0.0/16`, dp-dev-01 `10.30.0.0/16`. Some sections below still reference the legacy development block scheme (10.128.0.0/10) -- refer to `ip-allocation.yaml` and the README table for authoritative values.
 
 ## Overview
 
-The infrastructure uses a hierarchical IP allocation scheme designed to:
-- Support multiple environments (development, perimeter, production)
-- Enable clear organizational structure
-- Provide efficient address space utilization
-- Allow for significant growth
-- Prevent IP conflicts across environments
+The infrastructure uses a hierarchical IP allocation scheme designed to support multiple environments, prevent IP conflicts, and allow for significant growth.
 
 ### Total Managed IP Space
 
@@ -42,41 +29,44 @@ pie title "IP Address Distribution (25M Total)"
 ```mermaid
 flowchart TB
     subgraph "IP Allocation Hierarchy"
-        ORG["🏢 Organization<br/>25M IPs Total"]
-        
+        ORG("<b>Organization<br/>25M IPs Total</b>")
+
         subgraph BLOCKS["Major Blocks"]
-            DEV["📘 Development<br/>10.128.0.0/10<br/>4.2M IPs"]
-            PERIM["🔒 Perimeter<br/>10.192.0.0/10<br/>4.2M IPs"]
-            PROD["🚀 Production<br/>10.0.0.0/8<br/>16.7M IPs"]
+            DEV("<b>Development<br/>10.128.0.0/10<br/>4.2M IPs</b>")
+            PERIM("<b>Perimeter<br/>10.192.0.0/10<br/>4.2M IPs</b>")
+            PROD("<b>Production<br/>10.0.0.0/8<br/>16.7M IPs</b>")
         end
-        
+
         subgraph ENVS["Environments (/16 each)"]
-            DEV01["dp-dev-01<br/>10.132.0.0/16<br/>65,536 IPs"]
-            DEV02["dev-02<br/>10.133.0.0/16<br/>Reserved"]
-            MORE["...64 total"]
+            DEV01("<b>dp-dev-01<br/>10.30.0.0/16<br/>65,536 IPs</b>")
+            FNDEV01("<b>fn-dev-01<br/>10.20.0.0/16</b>")
+            VPNGW("<b>vpn-gateway<br/>10.11.0.0/16</b>")
         end
-        
+
         subgraph SUBNETS["Subnet Types"]
-            DMZ["DMZ /21<br/>2,048 IPs"]
-            PRIV["Private /21<br/>2,048 IPs"]
-            PUB["Public /21<br/>2,048 IPs"]
-            GKE["GKE /18<br/>16,384 IPs"]
+            DMZ("<b>DMZ /21<br/>2,048 IPs</b>")
+            PRIV("<b>Private /21<br/>2,048 IPs</b>")
+            PUB("<b>Public /21<br/>2,048 IPs</b>")
+            GKE("<b>GKE /18<br/>16,384 IPs</b>")
         end
     end
-    
+
     ORG --> BLOCKS
     DEV --> ENVS
     DEV01 --> SUBNETS
-    
-    classDef org fill:#E1F5FE,stroke:#01579B,stroke-width:3px
-    classDef block fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
-    classDef env fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px
-    classDef subnet fill:#FFF3E0,stroke:#FF9800,stroke-width:1px
-    
-    class ORG org
-    class BLOCKS,DEV,PERIM,PROD block
-    class ENVS,DEV01,DEV02,MORE env
-    class SUBNETS,DMZ,PRIV,PUB,GKE subnet
+
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,color:#000
+    classDef compute fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#000
+    classDef security fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,color:#000
+    classDef storage fill:#e1bee7,stroke:#7b1fa2,stroke-width:3px,color:#000
+
+    class ORG hub
+    class BLOCKS,DEV,PERIM,PROD network
+    class ENVS,DEV01,FNDEV01,VPNGW compute
+    class SUBNETS,DMZ,PRIV,PUB,GKE storage
+
+    linkStyle 0,1,2 stroke:#2e7d32,stroke-width:2px
 ```
 
 ### Per-Environment Allocation
@@ -106,69 +96,32 @@ Each GKE cluster requires secondary ranges for pods and services:
 
 ```mermaid
 flowchart LR
-    subgraph "Development Block (10.128.0.0/10)"
-        subgraph ACTIVE["Active Environments"]
-            DEV01["dp-dev-01<br/>10.132.0.0/16<br/>✅ Deployed"]
-        end
-        
-        subgraph RESERVED["Reserved"]
-            DEV02["dev-02<br/>10.133.0.0/16"]
-            DEV03["dev-03<br/>10.134.0.0/16"]
-            DEV04["dev-04<br/>10.135.0.0/16"]
-        end
-        
-        subgraph AVAILABLE["Available"]
-            AVAIL["60 Environments<br/>10.136.0.0 - 10.191.0.0"]
-        end
+    subgraph "Active Projects"
+        VPNGW("<b>vpn-gateway<br/>10.11.0.0/16</b>")
+        FNDEV("<b>fn-dev-01<br/>10.20.0.0/16</b>")
+        DPDEV("<b>dp-dev-01<br/>10.30.0.0/16</b>")
     end
-    
-    classDef active fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
-    classDef reserved fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
-    classDef available fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
-    
-    class ACTIVE,DEV01 active
-    class RESERVED,DEV02,DEV03,DEV04 reserved
-    class AVAILABLE,AVAIL available
+
+    subgraph "Available"
+        AVAIL("<b>Additional /16 blocks<br/>available for new projects</b>")
+    end
+
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+    classDef compute fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#000
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,color:#000
+
+    class VPNGW hub
+    class FNDEV,DPDEV compute
+    class AVAIL network
 ```
 
-**Block**: 10.128.0.0/10  
-**Range**: 10.128.0.0 - 10.191.255.255  
-**Capacity**: 64 environments × 65,536 IPs
+See `ip-allocation.yaml` for current per-project subnet breakdowns. Active project blocks:
 
-#### Active Environment: dp-dev-01
-
-```mermaid
-sankey-beta
-
-%% dp-dev-01 IP Allocation (10.132.0.0/16)
-dp-dev-01,DMZ,2048
-dp-dev-01,Private,2048
-dp-dev-01,Public,2048
-dp-dev-01,GKE-Primary,16384
-dp-dev-01,GKE-Pods,2048
-dp-dev-01,GKE-Services,256
-dp-dev-01,Reserved,8960
-dp-dev-01,Available,31744
-```
-
-**dp-dev-01**: 10.132.0.0/16
-- Status: ✅ Active
-- Utilization: 51.6% (33,792 IPs allocated)
-- Available: 48.4% (31,744 IPs)
-
-```yaml
-Primary Subnets:
-  dmz:     10.132.0.0/21  (2,048 IPs)
-  private: 10.132.8.0/21   (2,048 IPs)
-  public:  10.132.16.0/21  (2,048 IPs)
-  gke:     10.132.64.0/18  (16,384 IPs)
-
-Secondary Ranges:
-  cluster-01-pods:     10.132.128.0/21 (2,048 IPs)
-  cluster-01-services: 10.132.192.0/24 (256 IPs)
-  cluster-02-pods:     10.132.136.0/21 (reserved)
-  cluster-02-services: 10.132.193.0/24 (reserved)
-```
+| Project | Block | Status |
+|---------|-------|--------|
+| vpn-gateway | 10.11.0.0/16 | Active |
+| fn-dev-01 | 10.20.0.0/16 | Active |
+| dp-dev-01 | 10.30.0.0/16 | Active |
 
 ### Perimeter Block Details
 
@@ -190,26 +143,25 @@ Secondary Ranges:
 flowchart TB
     subgraph "CIDR Boundary Alignment Rules"
         subgraph "/21 Blocks"
-            A21["Third octet ÷ 8 = integer<br/>✅ 10.132.0.0/21<br/>✅ 10.132.8.0/21<br/>❌ 10.132.4.0/21"]
+            A21("<b>Third octet / 8 = integer<br/>Valid: 10.x.0.0/21, 10.x.8.0/21<br/>Invalid: 10.x.4.0/21</b>")
         end
-        
+
         subgraph "/18 Blocks"
-            A18["Third octet ÷ 64 = integer<br/>✅ 10.132.64.0/18<br/>✅ 10.132.128.0/18<br/>❌ 10.132.32.0/18"]
+            A18("<b>Third octet / 64 = integer<br/>Valid: 10.x.64.0/18, 10.x.128.0/18<br/>Invalid: 10.x.32.0/18</b>")
         end
-        
+
         subgraph "/19 Blocks"
-            A19["Third octet ÷ 32 = integer<br/>✅ 10.132.32.0/19<br/>✅ 10.132.160.0/19<br/>❌ 10.132.48.0/19"]
+            A19("<b>Third octet / 32 = integer<br/>Valid: 10.x.32.0/19, 10.x.160.0/19<br/>Invalid: 10.x.48.0/19</b>")
         end
-        
+
         subgraph "/24 Blocks"
-            A24["Always aligned<br/>✅ Any x.x.x.0/24"]
+            A24("<b>Always aligned<br/>Any x.x.x.0/24</b>")
         end
     end
-    
-    classDef valid fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
-    classDef rules fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
-    
-    class A21,A18,A19,A24 rules
+
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,color:#000
+
+    class A21,A18,A19,A24 network
 ```
 
 Proper CIDR alignment is essential for valid network configuration:
@@ -264,32 +216,32 @@ development:
 
 ```mermaid
 flowchart LR
-    subgraph "IP Allocation Management Tools"
-        subgraph COMMANDS["Available Commands"]
-            VALIDATE["validate<br/>Check conflicts"]
-            VISUALIZE["visualize<br/>Show allocations"]
-            AVAILABLE["available<br/>List free blocks"]
-            NEXT["next<br/>Suggest allocation"]
-        end
-        
-        subgraph OUTPUTS["Output Types"]
-            REPORT["Validation Report"]
-            DIAGRAM["Visual Map"]
-            LIST["Available Ranges"]
-            SUGGEST["Next Assignment"]
-        end
+    subgraph COMMANDS["Available Commands"]
+        VALIDATE("<b>validate<br/>Check conflicts</b>")
+        VISUALIZE("<b>visualize<br/>Show allocations</b>")
+        AVAIL("<b>available<br/>List free blocks</b>")
+        NEXT("<b>next<br/>Suggest allocation</b>")
     end
-    
+
+    subgraph OUTPUTS["Output Types"]
+        REPORT("<b>Validation Report</b>")
+        DIAGRAM("<b>Visual Map</b>")
+        LIST("<b>Available Ranges</b>")
+        SUGGEST("<b>Next Assignment</b>")
+    end
+
     VALIDATE --> REPORT
     VISUALIZE --> DIAGRAM
-    AVAILABLE --> LIST
+    AVAIL --> LIST
     NEXT --> SUGGEST
-    
-    classDef command fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
-    classDef output fill:#FFF3E0,stroke:#FF9800,stroke-width:2px
-    
-    class COMMANDS,VALIDATE,VISUALIZE,AVAILABLE,NEXT command
-    class OUTPUTS,REPORT,DIAGRAM,LIST,SUGGEST output
+
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,color:#000
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+
+    class VALIDATE,VISUALIZE,AVAIL,NEXT network
+    class REPORT,DIAGRAM,LIST,SUGGEST hub
+
+    linkStyle 0,1,2,3 stroke:#2e7d32,stroke-width:2px
 ```
 
 The `scripts/ip-allocation-checker.py` tool provides:
@@ -335,33 +287,31 @@ To manually verify an allocation:
 
 ```mermaid
 flowchart TB
-    subgraph "Environment Capacity"
-        subgraph DEV["Development"]
-            DACT["Active: 1"]
-            DRES["Reserved: 3"]
-            DAVL["Available: 60"]
-        end
-        
-        subgraph PERIM["Perimeter"]
-            PACT["Active: 0"]
-            PRES["Reserved: 2"]
-            PAVL["Available: 62"]
-        end
-        
-        subgraph PROD["Production"]
-            PRACT["Active: 0"]
-            PRRES["Reserved: 2"]
-            PRAVL["Available: 254"]
-        end
+    subgraph DEV["Development"]
+        DACT("<b>Active: 1</b>")
+        DRES("<b>Reserved: 3</b>")
+        DAVL("<b>Available: 60</b>")
     end
-    
-    classDef active fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
-    classDef reserved fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
-    classDef available fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
-    
-    class DACT,PACT,PRACT active
-    class DRES,PRES,PRRES reserved
-    class DAVL,PAVL,PRAVL available
+
+    subgraph PERIM["Perimeter"]
+        PACT("<b>Active: 0</b>")
+        PRES("<b>Reserved: 2</b>")
+        PAVL("<b>Available: 62</b>")
+    end
+
+    subgraph PROD["Production"]
+        PRACT("<b>Active: 0</b>")
+        PRRES("<b>Reserved: 2</b>")
+        PRAVL("<b>Available: 254</b>")
+    end
+
+    classDef compute fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#000
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,color:#000
+
+    class DACT,PACT,PRACT compute
+    class DRES,PRES,PRRES hub
+    class DAVL,PAVL,PRAVL network
 ```
 
 Current capacity and growth potential:
@@ -413,20 +363,21 @@ External IPs:     {project}-{resource}-{purpose}
 
 ```mermaid
 flowchart LR
-    subgraph "IP Allocation Change Process"
-        REQ["1️⃣ Identify<br/>Requirement"]
-        CHECK["2️⃣ Check<br/>Available"]
-        UPDATE["3️⃣ Update<br/>YAML"]
-        VALIDATE["4️⃣ Run<br/>Validation"]
-        CONFIG["5️⃣ Update<br/>Terragrunt"]
-        APPLY["6️⃣ Apply<br/>Changes"]
-        DOC["7️⃣ Document<br/>Changelog"]
-    end
-    
+    REQ("<b>1. Identify<br/>Requirement</b>")
+    CHECK("<b>2. Check<br/>Available</b>")
+    UPDATE("<b>3. Update<br/>YAML</b>")
+    VALIDATE("<b>4. Run<br/>Validation</b>")
+    CONFIG("<b>5. Update<br/>Terragrunt</b>")
+    APPLY("<b>6. Apply<br/>Changes</b>")
+    DOC("<b>7. Document<br/>Changelog</b>")
+
     REQ --> CHECK --> UPDATE --> VALIDATE --> CONFIG --> APPLY --> DOC
-    
-    classDef step fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
-    class REQ,CHECK,UPDATE,VALIDATE,CONFIG,APPLY,DOC step
+
+    classDef network fill:#b3e5fc,stroke:#0277bd,stroke-width:3px,color:#000
+
+    class REQ,CHECK,UPDATE,VALIDATE,CONFIG,APPLY,DOC network
+
+    linkStyle 0,1,2,3,4,5 stroke:#2e7d32,stroke-width:2px
 ```
 
 ## Troubleshooting
@@ -463,26 +414,24 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph "External IP Management"
-        subgraph NAT["NAT Gateway IPs"]
-            NAT1["dp-dev-01-nat<br/>35.246.0.1"]
-        end
-        
-        subgraph CLUSTER["Cluster Service IPs"]
-            CL1["cluster-01<br/>35.246.0.123"]
-            CL2["cluster-02<br/>Reserved"]
-        end
-        
-        subgraph SQL["SQL Server IPs"]
-            SQL1["sql-server-01<br/>35.246.0.200"]
-        end
+    subgraph NAT["NAT Gateway IPs"]
+        NAT1("<b>dp-dev-01-nat<br/>35.246.0.1</b>")
     end
-    
-    classDef active fill:#C8E6C9,stroke:#4CAF50,stroke-width:2px
-    classDef reserved fill:#FFE0B2,stroke:#FF9800,stroke-width:2px
-    
-    class NAT1,CL1,SQL1 active
-    class CL2 reserved
+
+    subgraph CLUSTER["Cluster Service IPs"]
+        CL1("<b>cluster-01<br/>35.246.0.123</b>")
+        CL2("<b>cluster-02<br/>Reserved</b>")
+    end
+
+    subgraph SQL["SQL Server IPs"]
+        SQL1("<b>sql-server-01<br/>35.246.0.200</b>")
+    end
+
+    classDef compute fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#000
+    classDef hub fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+
+    class NAT1,CL1,SQL1 compute
+    class CL2 hub
 ```
 
 ### NAT Gateway IPs

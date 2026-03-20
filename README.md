@@ -134,7 +134,7 @@ terragrunt-gcp-org-automation/
 │   ├── common.hcl                     # Shared variables and module versions
 │   ├── providers.hcl                  # Provider configuration
 │   └── templates/                     # 31 reusable resource templates
-├── docs/                              # Detailed documentation (41 guides)
+├── docs/                              # Detailed documentation (40 guides)
 ├── scripts/                           # Helper scripts
 ├── .github/
 │   ├── workflows.disabled/            # CI/CD workflows (enable by moving to workflows/)
@@ -341,9 +341,8 @@ inputs = {
 | [Org IAM Bindings](docs/ORG_IAM_BINDINGS_TEMPLATE.md) | Organisation-level IAM |
 | [Service Accounts](docs/SERVICE_ACCOUNTS_TEMPLATE.md) | Service account management |
 | [Workload Identity](docs/WORKLOAD_IDENTITY_TEMPLATE.md) | Workload Identity Federation for GKE |
-| [VPC Peering](docs/VPC_PEERING_GUIDE.md) | VPC peering configuration |
-| [VPC Peering & VPN](docs/VPC_PEERING_AND_VPN_GATEWAY.md) | Combined peering and VPN patterns |
-| [NCC & VPN Gateway](docs/NCC_AND_VPN_GATEWAY.md) | Network Connectivity Center |
+| [VPC Peering & VPN](docs/VPC_PEERING_AND_VPN_GATEWAY.md) | VPC peering and VPN gateway infrastructure |
+| [NCC & VPN Gateway](docs/NCC_AND_VPN_GATEWAY.md) | Network Connectivity Center (legacy) |
 
 ### Operations
 
@@ -353,6 +352,7 @@ inputs = {
 | [Module Versioning](docs/MODULE_VERSIONING.md) | Centralised module version management |
 | [Secret Management](docs/SECRET_MANAGEMENT.md) | Secret management best practices |
 | [Web Server Example](docs/WEB_SERVER_EXAMPLE.md) | Compute instance deployment example |
+| [Config Renderer](docs/TG_CONFIG_RENDERER.md) | Terragrunt configuration renderer tool |
 
 ## CI/CD Workflows
 

@@ -1,102 +1,79 @@
 # GCP Bootstrap Process
 
-## Overview
-
-The `scripts/org-bootstrap.sh` script sets up the complete initial infrastructure for Terragrunt-based GCP deployments. It creates the foundational resources needed for infrastructure-as-code management.
+The bootstrap script creates the foundational GCP resources that all subsequent Terragrunt-managed infrastructure depends on: a service account with organisation-level permissions, a state bucket, and a billing-reports bucket. Without these, no other resource in this repository can be planned or applied.
 
 ## What the Bootstrap Creates
 
-The bootstrap process creates:
-
-1. **GCP Folder**: `org-bootstrap` folder under the organization
+1. **GCP Folder**: `org-bootstrap` folder under the organisation
 2. **GCP Project**: `org-automation` project within the bootstrap folder
-3. **Service Account**: `tofu-sa-org` with organization-level permissions
+3. **Service Account**: `tofu-sa-org` with organisation-level permissions
 4. **Service Account Key**: Saved to `$HOME/tofu-sa-org-key.json`
-5. **GCS Bucket**: `org-tofu-state` for Terragrunt state storage
-6. **Billing Usage Reports Bucket**: `org-billing-usage-reports` for centralized billing data
+5. **GCS Bucket**: `org-tofu-state` for Terragrunt remote state
+6. **Billing Bucket**: `org-billing-usage-reports` for centralised billing data
 7. **Helper Script**: `scripts/apply-project-permissions.sh` for new projects
 
 ## Usage
 
-### Basic Usage
 ```bash
+# Interactive (prompts for org and billing)
 ./scripts/org-bootstrap.sh
-```
 
-### With Custom Parameters
-```bash
+# Explicit parameters
 ./scripts/org-bootstrap.sh [ORG_ID] [BILLING_ACCOUNT]
 ```
 
-### Parameters
-- `ORG_ID`: GCP Organization ID (default: YOUR_ORG_ID)
-- `BILLING_ACCOUNT`: Billing Account ID (default: YOUR_BILLING_ACCOUNT)
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `ORG_ID` | `YOUR_ORG_ID` | GCP Organisation ID |
+| `BILLING_ACCOUNT` | `YOUR_BILLING_ACCOUNT` | Billing Account ID |
 
 ## Prerequisites
 
-1. **GCP Authentication**: Must be authenticated with gcloud
-   ```bash
-   gcloud auth login
-   ```
-
-2. **Required APIs**: The following APIs should be enabled in your current project:
+1. **GCP Authentication**: `gcloud auth login`
+2. **Required APIs** (enabled in the current project):
    - `cloudresourcemanager.googleapis.com`
    - `cloudbilling.googleapis.com`
    - `storage.googleapis.com`
    - `iam.googleapis.com`
    - `serviceusage.googleapis.com`
+3. **Permissions**: Your account needs organisation-level access to create folders, projects, service accounts, and manage billing
 
-3. **Permissions**: Your account needs organization-level permissions to:
-   - Create folders and projects
-   - Manage IAM policies
-   - Create service accounts
-   - Manage billing account permissions
+## Bootstrap Phases
 
-## Bootstrap Process Phases
+### Phase 1 -- Service Account
+Creates `tofu-sa-org` in the current project and saves the key to `$HOME/tofu-sa-org-key.json`.
 
-### Phase 1: Service Account Creation
-- Creates `tofu-sa-org` service account in current project
-- Generates and saves service account key to `$HOME/tofu-sa-org-key.json`
+### Phase 2 -- Organisation Permissions
+Grants the service account these organisation-level roles:
 
-### Phase 2: Organization Permissions
-Grants the service account these organization-level roles:
-- `roles/resourcemanager.folderAdmin` - Folder management
-- `roles/resourcemanager.projectCreator` - Project creation
-- `roles/resourcemanager.projectDeleter` - Project deletion
-- `roles/resourcemanager.projectIamAdmin` - Project IAM management
-- `roles/billing.user` - Billing account usage
-- `roles/resourcemanager.organizationAdmin` - Organization administration
-- `roles/securitycenter.adminEditor` - Security center management
-- `roles/essentialcontacts.admin` - Essential contacts management
+- `roles/resourcemanager.folderAdmin`
+- `roles/resourcemanager.projectCreator`
+- `roles/resourcemanager.projectDeleter`
+- `roles/resourcemanager.projectIamAdmin`
+- `roles/billing.user`
+- `roles/resourcemanager.organizationAdmin`
+- `roles/securitycenter.adminEditor`
+- `roles/essentialcontacts.admin`
 
-### Phase 3: GCP Infrastructure Creation
+### Phase 3 -- GCP Infrastructure
 Using the service account:
-1. Creates `org-bootstrap` folder under organization
-2. Creates `org-automation` project in org-bootstrap folder
+
+1. Creates `org-bootstrap` folder under the organisation
+2. Creates `org-automation` project in that folder
 3. Links billing account to project
-4. Enables required APIs in project
-5. Creates `org-tofu-state` GCS bucket for Terragrunt state
-6. Creates `org-billing-usage-reports` GCS bucket for centralized billing data
-7. Enables versioning and uniform bucket-level access on both buckets
+4. Enables required APIs
+5. Creates `org-tofu-state` GCS bucket (versioned, uniform access)
+6. Creates `org-billing-usage-reports` GCS bucket (versioned, uniform access)
 
-### Phase 4: Project Permissions
-Grants comprehensive project-level permissions including:
-- Core project management (editor, IAM admin)
-- Compute Engine (admin, network admin, security admin)
-- VPC and Networking (networks admin, DNS admin)
-- Cloud SQL, Storage, BigQuery admin roles
-- Secret Manager, monitoring, logging admin roles
-- Service account management roles
+### Phase 4 -- Project Permissions
+Grants comprehensive project-level roles: editor, IAM admin, Compute Engine admin, network admin, Cloud SQL, Storage, BigQuery, Secret Manager, monitoring, logging, and service account management.
 
-### Phase 5: Helper Scripts
+### Phase 5 -- Helper Scripts
 Creates `scripts/apply-project-permissions.sh` for applying core permissions to new projects.
 
-## Configuration
+## Configuration Defaults
 
-The script uses these default values:
 ```bash
-ORG_ID="YOUR_ORG_ID"
-BILLING_ACCOUNT="YOUR_BILLING_ACCOUNT"
 FOLDER_NAME="org-bootstrap"
 PROJECT_ID="org-automation"
 BUCKET_NAME="org-tofu-state"
@@ -107,11 +84,9 @@ SA_NAME="tofu-sa-org"
 
 ## Post-Bootstrap Setup
 
-After successful bootstrap:
-
-1. **Update root.hcl**:
+1. **Update `root.hcl`**:
    ```hcl
-   bucket = "org-tofu-state"
+   bucket  = "org-tofu-state"
    project = "org-automation"
    ```
 
@@ -121,7 +96,7 @@ After successful bootstrap:
    export GOOGLE_PROJECT="org-automation"
    ```
 
-3. **Test Terragrunt setup**:
+3. **Test Terragrunt**:
    ```bash
    source scripts/setup_env.sh
    terragrunt init
@@ -129,85 +104,41 @@ After successful bootstrap:
 
 ## Security Considerations
 
-### Key Management
-- Service account key is saved to user's home directory
-- Consider storing in Google Secret Manager for production
-- Set up key rotation schedule
-- Monitor usage via Cloud Audit Logs
-
-### Permissions
-- Service account has broad organization-level permissions
-- Apply principle of least privilege for project-specific access
-- Regularly review and audit permissions
-
-### Monitoring
-- Enable Cloud Audit Logs for service account usage
-- Set up alerts for suspicious activity
-- Regular security reviews of IAM policies
+- Store the service account key securely; consider Google Secret Manager for production
+- Set up key rotation and monitor usage via Cloud Audit Logs
+- The service account has broad org-level permissions -- apply least-privilege overrides for project-specific access
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Folder Creation Fails**:
-   - Folder may already exist (script will detect and continue)
-   - Check organization-level permissions
-
-2. **Billing Account Link Fails**:
-   - Verify billing account ID format
-   - Check billing account permissions
-
-3. **API Enablement Fails**:
-   - Ensure service account has necessary permissions
-   - Check project quotas and limits
+| Issue | Resolution |
+|-------|------------|
+| Folder creation fails | Folder may already exist (script detects and continues). Check org-level permissions. |
+| Billing link fails | Verify billing account ID format and permissions. |
+| API enablement fails | Check service account permissions and project quotas. |
 
 ### Verification Commands
 
 ```bash
-# Check folder exists
 gcloud resource-manager folders list --organization=YOUR_ORG_ID
-
-# Check project exists
 gcloud projects describe org-automation
-
-# Check buckets exist
 gsutil ls gs://org-tofu-state
 gsutil ls gs://org-billing-usage-reports
-
-# Check service account
 gcloud iam service-accounts list --project=org-automation
 ```
-
-## Integration with Terragrunt
-
-The bootstrap creates the foundation for the Terragrunt infrastructure:
-
-- **State Storage**: GCS bucket for remote state
-- **Authentication**: Service account for CI/CD workflows
-- **Project Structure**: Bootstrap folder for infrastructure projects
-- **Permissions**: Comprehensive roles for infrastructure management
-
-The created service account can be used in:
-- GitHub Actions workflows
-- Local development (via key file)
-- CI/CD pipelines
-- Automated deployments
 
 ## Helper Scripts
 
 ### apply-project-permissions.sh
+
 Applies core Terraform permissions to new projects:
 
 ```bash
 ./scripts/apply-project-permissions.sh NEW_PROJECT_ID
 ```
 
-Core roles applied:
-- `roles/editor`
-- `roles/iam.securityAdmin`
-- `roles/compute.admin`
-- `roles/storage.admin`
-- `roles/secretmanager.admin`
-- `roles/serviceusage.serviceUsageAdmin`
-- `roles/cloudsql.admin`
-- `roles/bigquery.admin`
+Roles applied: `roles/editor`, `roles/iam.securityAdmin`, `roles/compute.admin`, `roles/storage.admin`, `roles/secretmanager.admin`, `roles/serviceusage.serviceUsageAdmin`, `roles/cloudsql.admin`, `roles/bigquery.admin`.
+
+## References
+
+- [Google Cloud Resource Manager](https://cloud.google.com/resource-manager/docs)
+- [Service Account Best Practices](https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys)
