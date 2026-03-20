@@ -583,4 +583,3 @@ sequenceDiagram
 - [Network Architecture](NETWORK_ARCHITECTURE.md) - Detailed network design
 - [GitOps Architecture](GITOPS_ARCHITECTURE.md) - ArgoCD and deployment patterns
 - [IP Allocation](IP_ALLOCATION.md) - IP address management
-- [Current State](CURRENT_STATE.md) - Live infrastructure status

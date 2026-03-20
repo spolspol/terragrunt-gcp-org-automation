@@ -2,16 +2,13 @@
 
 ## Overview
 
-The `org_iam_bindings.hcl` template manages organisation-level IAM bindings using the [terraform-google-iam](https://github.com/terraform-google-modules/terraform-google-iam) module's `organizations_iam` submodule.
+Organisation-level IAM bindings control who can act across every project and folder in the GCP organisation. Managing them declaratively prevents drift, ensures auditability, and avoids manual Console changes that are hard to track.
 
-## Module
-
-- **Source**: `terraform-google-modules/iam/google//modules/organizations_iam`
-- **Version**: Defined in `_common/common.hcl` under `module_versions.iam`
+The `org_iam_bindings.hcl` template (`_common/templates/org_iam_bindings.hcl`) wraps the [terraform-google-iam](https://github.com/terraform-google-modules/terraform-google-iam) module's `organizations_iam` submodule. Version is pinned in `_common/common.hcl` as `module_versions.iam`.
 
 ## Usage Pattern
 
-Organisation IAM bindings are defined in `live/<account>/org-iam-bindings/terragrunt.hcl` using a structured approach:
+Organisation IAM bindings are defined in `live/<account>/org-iam-bindings/terragrunt.hcl` (e.g. `live/non-production/org-iam-bindings/`) using a structured approach:
 
 ### 1. User Roles (User -> [roles])
 

@@ -1,102 +1,60 @@
-<!-- Space: PE -->
-<!-- Title: Cloud DNS Private Zones -->
-<!-- Parent: Networking Resources -->
-<!-- Label: cloud-dns -->
-<!-- Label: private-dns -->
-<!-- Label: networking -->
-<!-- Label: psc -->
-<!-- Label: architecture -->
+# Cloud DNS Private Zones
 
-# Cloud DNS Private Zones Documentation
+Private Cloud DNS zones provide internal name resolution within VPC networks for Private Service Connect endpoints, GKE cluster services, Cloud SQL private IPs, and internal load balancers.
 
-## Overview
+**Module version**: `cloud_dns = "v6.0.0"` (pinned in `_common/common.hcl`)
 
-This document describes the implementation and configuration of Cloud DNS private zones in the GCP infrastructure, including integration with GKE clusters for Private Service Connect (PSC) support and internal service discovery.
+**Templates**: `_common/templates/cloud_dns.hcl`, `_common/templates/cloud_dns_peering.hcl`
 
 ## Architecture
 
-### Private DNS Zone Structure
-
-The organization uses private Cloud DNS zones for internal name resolution within VPC networks. These zones provide DNS resolution for:
-- Private Service Connect endpoints
-- Internal service discovery
-- GKE cluster services
-- Cloud SQL private IPs
-- Internal load balancers
-
 ### Naming Convention
 
-Private zones follow the pattern: `{project}.{env}.example.io`
+Private zones follow the pattern `{project}.{env}.example.io`:
 
-**Development Environment:**
-- `dp-dev-01.dev.example.io.` (Development)
-- `dev.example.io.` (Shared hub zone for VPN clients)
+| Environment | Zone | Purpose |
+|-------------|------|---------|
+| Development | `dp-dev-01.dev.example.io.` | Project-scoped DNS |
+| Development | `dev.example.io.` | Hub zone for VPN clients |
+| UAT | `dp-dev-01.uat.example.io.` | Data Platform UAT |
+| UAT | `fn-dev-01.uat.example.io.` | Functions UAT |
 
-**UAT Environment:**
-- `dp-dev-01.uat.example.io.` (Data Platform UAT)
-- `fn-dev-01.uat.example.io.` (Functions UAT)
-- `uat.example.io.` (Shared UAT hub zone for VPN clients)
+### Directory Layout
 
-**Production Environment (future):**
-- `prod-01.prod.example.io.` (Production)
+```
+live/non-production/
+  development/
+    functions/fn-dev-01/global/cloud-dns/     # fn-dev-01 private zones
+    dp-dev-01/global/cloud-dns/               # dp-dev-01 private zones
+  hub/
+    dns-hub/global/cloud-dns/                 # Shared hub zones (VPN-wide)
+    vpn-gateway/global/cloud-dns/peering/     # Peering zones for VPN access
+```
 
 ## Implementation
 
-### 1. Private DNS Zone Configuration
+### 1. Private DNS Zone
 
-#### Location
-```
-# Development Environment
-live/non-production/development/dp-dev-01/global/cloud-dns/
-├── dns.hcl                         # DNS configuration
-└── dp-dev-01-dev-example-io/          # dp-dev-01 private zone implementation
-    └── terragrunt.hcl
+Each project creates a private zone associated with its VPC network.
 
-# UAT Environment
-live/non-production/uat/data-platform/dp-dev-01/global/cloud-dns/
-├── dns.hcl                         # UAT DNS configuration
-└── dp-dev-01-uat-example-io/           # dp-dev-01 private zone
-    └── terragrunt.hcl
+**Shared defaults** (`dns.hcl`):
 
-live/non-production/uat/functions/fn-dev-01/global/cloud-dns/
-├── dns.hcl                         # UAT DNS configuration
-└── fn-dev-01-uat-example-io/           # fn-dev-01 private zone
-    └── terragrunt.hcl
-
-# Hub Zones (DNS Hub project)
-live/non-production/hub/dns-hub/global/cloud-dns/
-├── dns.hcl                         # Shared hub defaults
-├── dev-example-io/                 # Dev VPN-wide private zone
-│   └── terragrunt.hcl
-└── uat-example-io/                 # UAT VPN-wide private zone
-    └── terragrunt.hcl
-```
-
-#### Configuration (dns.hcl)
 ```hcl
 locals {
-  # Default configuration for all DNS zones in this project
-  default_ttl = 300
-
-  # Common labels for all zones
+  default_ttl      = 300
+  enable_dnssec    = false
+  type             = "private"
+  visibility       = "private"
   dns_labels = {
     managed_by   = "terragrunt"
     dns_provider = "google-cloud-dns"
-    project_type = "development"
     visibility   = "private"
   }
-
-  # Private zone settings (no DNSSEC for private zones)
-  enable_dnssec    = false
-  dnssec_algorithm = ""
-
-  # Zone type configuration
-  type       = "private"
-  visibility = "private"
 }
 ```
 
-#### Dev-01 Zone Implementation (terragrunt.hcl)
+**Zone implementation** (`terragrunt.hcl`):
+
 ```hcl
 include "dns_template" {
   path           = "${get_repo_root()}/_common/templates/cloud_dns.hcl"
@@ -108,32 +66,21 @@ dependency "network" {
 }
 
 inputs = {
-  # Zone configuration
   domain      = "dp-dev-01.dev.example.io."
-  description = "Private DNS zone for dp-dev-01 internal resources and Private Service Connect"
+  description = "Private DNS zone for dp-dev-01 internal resources"
+  type        = "private"
+  visibility  = "private"
 
-  # Private zone configuration
-  type       = "private"
-  visibility = "private"
-
-  # Associate with VPC network
   private_visibility_config_networks = [
     dependency.network.outputs.network_self_link
   ]
 
-  # DNS Records for dp-dev-01 internal services (examples)
   recordsets = [
     {
       name    = "postgres-main"
       type    = "A"
       ttl     = 300
-      records = ["10.199.16.3"]   # dp-dev-01 Cloud SQL private IP
-    },
-    {
-      name    = "windows-qat-ers"
-      type    = "A"
-      ttl     = 300
-      records = ["10.132.0.21"]   # dp-dev-01 QA Windows host (perimeter subnet)
+      records = ["10.199.16.3"]
     }
   ]
 }
@@ -141,19 +88,17 @@ inputs = {
 
 ### 2. Shared Hub Zone (`dev.example.io.`)
 
-The `dns-hub` project hosts a single private zone that is attached directly to the VPN Gateway VPC. Use this zone for records that must be reachable by any VPN client, regardless of the environment they connect to.
+The `dns-hub` project hosts a zone attached directly to the VPN Gateway VPC for records reachable by all VPN clients.
 
 ```hcl
-# live/non-production/hub/dns-hub/global/cloud-dns/dev-example-io-internal/terragrunt.hcl
-
 dependency "vpn_gateway_network" {
   config_path = "${get_repo_root()}/live/non-production/hub/vpn-gateway/vpc-network"
 }
 
 inputs = {
-  domain      = "dev.example.io."
-  type        = "private"
-  visibility  = "private"
+  domain     = "dev.example.io."
+  type       = "private"
+  visibility = "private"
 
   private_visibility_config_networks = [
     dependency.vpn_gateway_network.outputs.network_self_link
@@ -170,60 +115,31 @@ inputs = {
 }
 ```
 
-- **Purpose**: surface shared aliases and service endpoints to all VPN users.
-- **Example**: the `development.dev.example.io` CNAME now resolves to the dp-dev-01 GKE services endpoint.
-- **App URLs**: application ingress follows `https://<app>.dp-dev-01.dev.example.io` (e.g., `https://grafana.dp-dev-01.dev.example.io`).
-- **Peering**: this zone is directly associated with the VPN Gateway VPC, so no additional Cloud DNS peering is required.
+Application ingress follows `https://<app>.dp-dev-01.dev.example.io`. No peering zone is needed since this zone is directly associated with the VPN Gateway VPC.
 
-### 3. GKE Integration with Cloud DNS
+### 3. GKE Cloud DNS Integration
 
-#### Cloud DNS Provider Configuration
-
-GKE clusters can use Cloud DNS as their DNS provider instead of the default kube-dns, providing:
-- Managed DNS service (no cluster-hosted DNS pods)
-- Local DNS caching on each node (NodeLocal DNSCache)
-- VPC-wide DNS resolution
-- Automatic Pod and Service DNS provisioning
-
-#### Cluster Configuration
-
-In `live/non-production/development/dp-dev-01/europe-west2/gke/cluster-02/terragrunt.hcl`:
+GKE clusters can use Cloud DNS as their DNS provider instead of kube-dns:
 
 ```hcl
 inputs = {
-  # ... other configuration ...
+  cluster_dns_provider = "CLOUD_DNS"
+  cluster_dns_scope    = "VPC_SCOPE"   # Extends DNS to entire VPC
+  dns_cache            = true          # NodeLocal DNSCache
 
-  # Cloud DNS provider configuration
-  cluster_dns_provider = "CLOUD_DNS"  # Use Cloud DNS instead of kube-dns
-  cluster_dns_scope    = "VPC_SCOPE"  # Enable VPC-wide DNS resolution
-  dns_cache           = true          # Enable NodeLocal DNSCache
-
-  # Stub domains for internal resolution
   stub_domains = {
-  "dp-dev-01.dev.example.io" = ["169.254.169.254"]
+    "dp-dev-01.dev.example.io" = ["169.254.169.254"]
   }
 }
 ```
 
-### 4. DNS Peering to vpn-gateway
+**DNS scope options**:
+- **CLUSTER_SCOPE** (default): DNS records only resolvable within the cluster
+- **VPC_SCOPE** (recommended): Extends to entire VPC; required for PSC integration
 
-To make private DNS available to VPN clients, the `vpn-gateway` project hosts Cloud DNS **peering zones** that point at each producer VPC.  These peering zones forward queries for `{project}.dev.example.io` into the originating project without duplicating records.
+### 4. DNS Peering to VPN Gateway
 
-> The shared `dev.example.io.` zone is attached directly to the VPN gateway VPC and therefore does **not** require a peering zone.
-
-#### Peering Zone Layout
-```
-live/non-production/hub/vpn-gateway/global/cloud-dns/peering/
-├── peering.hcl                              # Shared labels/defaults
-├── dp-dev-01/                                  # Peering zone for development VPC
-│   └── terragrunt.hcl
-├── dp-dev-01/                                   # Peering zone for dp-dev-01 VPC
-│   └── terragrunt.hcl
-└── fn-dev-01/                                   # Peering zone for fn-dev-01 VPC
-    └── terragrunt.hcl
-```
-
-Each `terragrunt.hcl` uses the `_common/templates/cloud_dns_peering.hcl` template and depends on the source VPC network to provide the target self link:
+Peering zones in `vpn-gateway` forward queries for `{project}.dev.example.io` into each producer VPC without duplicating records. Each zone uses `_common/templates/cloud_dns_peering.hcl`:
 
 ```hcl
 dependency "target_network" {
@@ -243,160 +159,50 @@ inputs = {
 }
 ```
 
-This pattern allows every VPC that is peered with `vpn-gateway` to publish its private namespace without sharing records manually.
-
 ### 5. DNS Forwarding for VPN Clients
 
-The VPN server now runs `dnsmasq` and advertises a metadata-driven bind address (`dns-bind-address`, default `10.11.2.10`) as the DNS server for all VPN pools.  The service forwards queries for `*.dev.example.io` (metadata key `dns-forward-domain`) to Google's metadata resolver `169.254.169.254`, which in turn honours the Cloud DNS peering configuration. These values are defined via `vpn_dns_settings` in `live/non-production/hub/vpn-gateway/europe-west2/compute/compute.hcl`.
+The VPN server runs `dnsmasq` to forward `*.dev.example.io` queries to Google's metadata resolver (`169.254.169.254`), which honours Cloud DNS peering. Key settings from `vpn_dns_settings` in the VPN gateway compute config:
 
-Key updates delivered by the VPN server install script:
-```bash
-apt-get install -y mongodb-org dnsmasq
+- **Bind address**: `10.11.2.10` (metadata key `dns-bind-address`)
+- **Forward domain**: `dev.example.io` (metadata key `dns-forward-domain`)
+- **Firewall**: `allow-vpn-dns` permits TCP/UDP 53 from VPN pools to the VPN server
 
-cat >/etc/dnsmasq.d/dev-example-io.conf <<EOF
-server=/${DNS_FORWARD_DOMAIN}/169.254.169.254
-listen-address=127.0.0.1,${DNS_BIND_ADDRESS}
-bind-interfaces
-EOF
-systemctl enable dnsmasq
-systemctl restart dnsmasq
-```
+## Private Service Connect
 
-The VPN server configuration script pushes the new DNS server and search domain to every VPN server:
+PSC endpoints require manual DNS records since they are not created automatically:
 
-```python
-VPN_DNS_SERVER = "10.11.2.10"
-VPN_SEARCH_DOMAIN = "dev.example.io"
+1. Create the PSC endpoint with a reserved IP
+2. Add an A record in the project's private zone pointing to that IP
+3. Use the DNS name in connection strings (e.g. `postgres-main.dp-dev-01.dev.example.io`)
 
-update_fields = {
-    "dns_servers": [VPN_DNS_SERVER],
-    "search_domain": VPN_SEARCH_DOMAIN,
-}
-```
+## Managing Records
 
-Firewall rule `allow-vpn-dns` now allows TCP/UDP 53 from all VPN pools to the VPN server instance so that clients can query `dnsmasq`.
+### Via Terragrunt (preferred)
 
-#### DNS Scope Options
+Add entries to the `recordsets` array in the zone's `terragrunt.hcl`, then apply:
 
-1. **CLUSTER_SCOPE** (Default)
-   - DNS records only resolvable within the cluster
-   - Same behavior as kube-dns
-   - Isolated to cluster nodes
-
-2. **VPC_SCOPE** (Recommended for PSC)
-   - Extends cluster DNS to entire VPC
-   - Headless Services resolvable from Compute Engine VMs
-   - Enables cross-resource DNS queries
-   - Required for Private Service Connect integration
-
-## Private Service Connect Integration
-
-### DNS Requirements for PSC
-
-Private Service Connect requires DNS records for endpoint resolution. Cloud SQL and other PSC-enabled services don't create DNS records automatically.
-
-### Adding PSC Endpoints
-
-When creating a Private Service Connect endpoint:
-
-1. **Create the PSC endpoint**
-   ```bash
-   gcloud compute addresses create postgres-psc-endpoint \
-     --subnet=dp-dev-01-vpc-network-private \
-     --address=10.132.8.100 \
-     --region=europe-west2 \
-     --project=dp-dev-01-a
-   ```
-
-2. **Add DNS record**
-   ```bash
-  gcloud dns record-sets create postgres-main.dp-dev-01.dev.example.io. \
-    --zone=dp-dev-01-dev-example-io-internal \
-     --type=A \
-     --ttl=300 \
-     --rrdatas=10.132.8.100 \
-     --project=dp-dev-01-a
-   ```
-
-3. **Update connection strings**
-   ```
-  postgresql://user:pass@postgres-main.dp-dev-01.dev.example.io:5432/db  # pragma: allowlist secret
-   ```
-
-## DNS Records Management
-
-### Record Types Supported
-
-- **A Records**: IPv4 addresses for services
-- **AAAA Records**: IPv6 addresses (if needed)
-- **CNAME Records**: Aliases for convenience
-- **PTR Records**: Reverse DNS lookups
-- **SRV Records**: Service discovery
-- **TXT Records**: Metadata and verification
-
-### Adding Records via Terragrunt
-
-Update the `recordsets` array in the zone's terragrunt.hcl:
-
-```hcl
-recordsets = [
-  {
-    name    = "service-name"
-    type    = "A"
-    ttl     = 300
-    records = ["10.132.8.x"]
-  }
-]
-```
-
-Then apply:
 ```bash
 cd live/non-production/development/dp-dev-01/global/cloud-dns/dp-dev-01-dev-example-io-internal
 terragrunt apply --auto-approve
 ```
 
-### Adding Records via gcloud
+### Via gcloud (ad-hoc)
 
 ```bash
-# Add A record
 gcloud dns record-sets create <name>.dp-dev-01.dev.example.io. \
   --zone=dp-dev-01-dev-example-io-internal \
-  --type=A \
-  --ttl=300 \
-  --rrdatas=<IP_ADDRESS> \
-  --project=dp-dev-01-a
-
-# Add CNAME record
-gcloud dns record-sets create <alias>.dp-dev-01.dev.example.io. \
-  --zone=dp-dev-01-dev-example-io-internal \
-  --type=CNAME \
-  --ttl=300 \
-  --rrdatas=<target>.dp-dev-01.dev.example.io. \
+  --type=A --ttl=300 --rrdatas=<IP_ADDRESS> \
   --project=dp-dev-01-a
 ```
 
-## Testing and Validation
-
-### From GKE Cluster
+## Testing
 
 ```bash
-# Get cluster credentials
-gcloud container clusters get-credentials dp-dev-01-ew2-cluster-02 \
-  --region=europe-west2 \
-  --project=dp-dev-01-a
-
-# Test DNS resolution
+# From GKE cluster
 kubectl run dns-test --image=busybox --rm -it --restart=Never -- \
   nslookup cluster-01.ew2.dp-dev-01.dev.example.io
 
-# Validate custom records you add:
-# nslookup <record>.dp-dev-01.dev.example.io
-```
-
-### Verify Cloud DNS Configuration
-
-```bash
-# Check zone details
+# Verify zone configuration
 gcloud dns managed-zones describe dp-dev-01-dev-example-io-internal \
   --project=dp-dev-01-a
 
@@ -404,148 +210,29 @@ gcloud dns managed-zones describe dp-dev-01-dev-example-io-internal \
 gcloud dns record-sets list \
   --zone=dp-dev-01-dev-example-io-internal \
   --project=dp-dev-01-a
-
-# Check cluster DNS configuration
-gcloud container clusters describe dp-dev-01-ew2-cluster-02 \
-  --region=europe-west2 \
-  --project=dp-dev-01-a \
-  --format="yaml(clusterDnsConfig)"
 ```
 
 ## Troubleshooting
 
-### Common Issues
+| Symptom | Check |
+|---------|-------|
+| Pods cannot resolve private zone records | Verify `cluster_dns_scope = "VPC_SCOPE"` and zone is associated with the VPC |
+| PSC endpoint not resolving | Confirm DNS A record exists and PSC endpoint is in ACCEPTED state |
+| Cluster still using kube-dns | Verify `cluster_dns_provider = "CLOUD_DNS"` is set; check cluster events |
 
-#### 1. DNS Resolution Fails from Cluster
-
-**Symptom**: Pods cannot resolve private zone records
-
-**Solutions**:
-- Verify cluster has `cluster_dns_scope = "VPC_SCOPE"`
-- Check stub domains configuration
-- Ensure private zone is associated with the VPC network
-
-#### 2. PSC Endpoint Not Resolving
-
-**Symptom**: Cannot connect to Cloud SQL via DNS name
-
-**Solutions**:
-- Verify DNS record exists for the PSC endpoint
-- Check PSC endpoint is in ACCEPTED state
-- Ensure correct IP address in DNS record
-
-#### 3. Cloud DNS Not Working in GKE
-
-**Symptom**: Cluster still using kube-dns
-
-**Solutions**:
-- Check `cluster_dns_provider = "CLOUD_DNS"` is set
-- Verify cluster was created/updated with this configuration
-- Review cluster events for DNS-related errors
-
-### Debug Commands
-
-```bash
-# Check DNS provider in cluster
-kubectl get pods -n kube-system | grep dns
-
-# For Cloud DNS, should see:
-# cloud-dns-*
-
-# For kube-dns, would see:
-# kube-dns-*
-
-# Test from debug pod
-kubectl run -it --rm debug --image=gcr.io/google.com/cloudsdktool/cloud-sdk:slim \
-  --restart=Never -- bash
-
-# Inside pod:
-apt-get update && apt-get install -y dnsutils
-nslookup cluster-01.ew2.dp-dev-01.dev.example.io
-dig +trace cluster-01.ew2.dp-dev-01.dev.example.io
-```
+**Debug**: `kubectl get pods -n kube-system | grep dns` -- Cloud DNS shows `cloud-dns-*` pods; kube-dns shows `kube-dns-*`.
 
 ## Best Practices
 
-### 1. Naming Conventions
-- Use descriptive names for DNS records
-- Follow pattern: `{service}-{type}.{zone}`
-- Examples: `postgres-main`, `redis-cache`, `api-internal`
-
-### 2. TTL Settings
-- Use 300 seconds (5 minutes) for dynamic services
-- Use 3600 seconds (1 hour) for stable services
-- Use 86400 seconds (1 day) for static resources
-
-### 3. Security
-- Keep zones private (never expose internal IPs)
-- Use separate zones per environment
-- Implement least-privilege access to DNS management
-
-### 4. Documentation
-- Document all DNS records and their purposes
-- Keep record of PSC endpoint mappings
-- Update when adding new services
-
-## Migration Guide
-
-### Migrating Existing Cluster from kube-dns to Cloud DNS
-
-**Note**: This may require cluster recreation depending on the GKE version.
-
-1. **Check Current Configuration**
-   ```bash
-   gcloud container clusters describe <cluster-name> \
-     --region=<region> \
-     --format="value(clusterDnsConfig.clusterDns)"
-   ```
-
-2. **Update Terragrunt Configuration**
-   ```hcl
-   cluster_dns_provider = "CLOUD_DNS"
-   cluster_dns_scope    = "VPC_SCOPE"
-   dns_cache           = true
-   ```
-
-3. **Apply Changes**
-   ```bash
-   terragrunt plan  # Review if cluster needs recreation
-   terragrunt apply --auto-approve
-   ```
-
-## Future Enhancements
-
-### Planned Improvements
-
-1. **Multi-Environment DNS**
-   - Create zones for staging and production
-   - Implement DNS forwarding between environments
-
-2. **DNS Policies**
-   - Response policies for split-horizon DNS
-   - Geo-based routing for multi-region
-
-3. **Automation**
-   - Automatic DNS record creation for PSC endpoints
-   - Integration with service mesh for service discovery
-
-4. **Monitoring**
-   - DNS query metrics and logging
-   - Alert on resolution failures
+1. **Naming**: Use `{service}-{type}` pattern (e.g. `postgres-main`, `redis-cache`)
+2. **TTL**: 300s for dynamic services, 3600s for stable services
+3. **Security**: Keep zones private; use separate zones per environment
+4. **Peering**: Use DNS peering zones rather than duplicating records across VPCs
+5. **Documentation**: Maintain a record of all PSC endpoint DNS mappings
 
 ## References
 
-- [Cloud DNS for GKE Documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/cloud-dns)
-- [Private Service Connect Overview](https://cloud.google.com/vpc/docs/private-service-connect)
+- [Cloud DNS for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/cloud-dns)
 - [Cloud DNS Private Zones](https://cloud.google.com/dns/docs/zones)
-- [GKE DNS Configuration](https://cloud.google.com/kubernetes-engine/docs/how-to/cloud-dns#dns_scopes)
+- [Private Service Connect](https://cloud.google.com/vpc/docs/private-service-connect)
 - [Terraform Google DNS Module](https://registry.terraform.io/modules/terraform-google-modules/cloud-dns/google/latest)
-
-## Document History
-
-- **2025-09-23**: Initial documentation created
-- **2025-09-23**: Added cluster-02 Cloud DNS configuration
-- **2025-09-23**: Updated DNS records for cluster-02 ingress endpoints
-- **2026-02-06**: Added UAT environment DNS zones (dp-dev-01, fn-dev-01)
-- **2026-02-06**: Added uat.example.io hub zone for UAT VPN clients
-- **2026-02-06**: Added DNS peering zones for UAT projects

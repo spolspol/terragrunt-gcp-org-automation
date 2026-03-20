@@ -1,14 +1,3 @@
-<!-- Space: PE -->
-<!-- Title: Cloud Armor Template -->
-<!-- Parent: Networking Resources -->
-<!-- Label: template -->
-<!-- Label: cloud-armor -->
-<!-- Label: security -->
-<!-- Label: load-balancer -->
-<!-- Label: ip-allowlist -->
-<!-- Label: howto -->
-<!-- Label: intermediate -->
-
 # Cloud Armor Template
 
 This document describes the Cloud Armor configuration pattern for deploying Google Cloud Armor security policies to restrict access to External Application Load Balancers by source IP.
@@ -191,7 +180,6 @@ The `load-balancer` resource type depends on `cloud-armor`, so the CI/CD engine 
 - **CIDR precision**: Use `/32` for individual IPs to avoid accidentally allowing adjacent addresses.
 - **Separate policies per LB**: Name policies to match their load balancer (e.g. `fn-dev-01-cloud-run-lb-policy`).
 - **Document IP sources**: Comment each CIDR with its purpose (office, VPN, partner).
-- **Webhook exceptions**: Leave webhook backends without a policy and rely on HMAC/API-key validation.
 - **Priority spacing**: Use priorities in increments of 1000 to leave room for future rules.
 
 ## Troubleshooting
@@ -235,5 +223,5 @@ curl -I https://api.fn-dev-01.uat.example.io/api/health
 
 - [Google Cloud Armor documentation](https://cloud.google.com/armor/docs)
 - [terraform-google-cloud-armor module](https://github.com/GoogleCloudPlatform/terraform-google-cloud-armor)
-- [Load Balancer Template](LOAD_BALANCER_TEMPLATE.md)
+
 - [Configuration Templates Overview](CONFIGURATION_TEMPLATES.md)

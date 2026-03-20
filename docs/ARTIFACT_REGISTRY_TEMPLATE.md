@@ -1,12 +1,3 @@
-<!-- Space: PE -->
-<!-- Title: Artifact Registry Template -->
-<!-- Parent: Storage & Data -->
-<!-- Label: template -->
-<!-- Label: artifact-registry -->
-<!-- Label: container-registry -->
-<!-- Label: howto -->
-<!-- Label: intermediate -->
-
 # Artifact Registry Template
 
 This document describes the Artifact Registry Terragrunt template for deploying container and artifact registries consistently across environments.
@@ -221,17 +212,6 @@ inputs = {
 
 The resource is automatically detected and deployed by the IaC Engine workflow when changes are merged to `main`.
 
-## Importing Existing Repositories
-
-If the repository already exists in GCP, import it before applying:
-
-```bash
-cd live/non-production/uat/functions/fn-dev-01/artifact-registry/org-api-orchestrations
-
-terragrunt run import google_artifact_registry_repository.main \
-  projects/fn-dev-01-a/locations/europe-west2/repositories/org-api-orchestrations
-```
-
 ## Best Practices
 
 - Use **remote proxy** mode for external registries to cache images locally and avoid rate limits.
@@ -239,16 +219,8 @@ terragrunt run import google_artifact_registry_repository.main \
 - Store upstream credentials in **Secret Manager** and reference by version path.
 - Enable **immutable tags** in production to prevent image overwrites.
 - Set `cleanup_policy_dry_run = true` first to verify which artefacts would be removed.
-- Always apply consistent **labels** for cost tracking and resource management.
 
 ## Troubleshooting
-
-### Import Command for Existing Repositories
-
-```bash
-terragrunt run import google_artifact_registry_repository.main \
-  projects/PROJECT_ID/locations/REGION/repositories/REPO_ID
-```
 
 ### Common Errors
 
